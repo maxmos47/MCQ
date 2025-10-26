@@ -221,6 +221,7 @@ def page_exam():
 # ====================== Teacher Dashboard ======================
 # ----------------------------------------------------------------------
 
+# ====================== Teacher Dashboard ======================
 def page_dashboard():
     st.markdown("### 👩‍🏫 Dashboard อาจารย์ — ตั้งค่า Active Exam และดูผล")
     if not TEACHER_KEY:
@@ -228,286 +229,263 @@ def page_dashboard():
         return
 
     key_in = st.text_input("รหัสผ่านอาจารย์", type="password")
-    
-    # ใช้วิธี re-render เพื่อให้ส่วนของ Dashboard แสดงหลังจากป้อนรหัสผ่านแล้ว
-    # โดยไม่ต้องกดปุ่ม "เข้าสู่ระบบ" หากมี key_in
-    is_authenticated = st.session_state.get("authenticated", False) or (key_in == TEACHER_KEY and key_in != "")
-    
-    if st.button("เข้าสู่ระบบ", use_container_width=True):
-         if key_in == TEACHER_KEY and key_in != "":
-             st.session_state["authenticated"] = True
-             st.rerun()
-         else:
-             st.error("รหัสผ่านไม่ถูกต้อง")
-             st.stop()
-             return
-
-    if not is_authenticated:
-        if key_in and key_in != TEACHER_KEY:
-             st.error("รหัสผ่านไม่ถูกต้อง")
-        return
-        
-    st.success("เข้าสู่ระบบแล้ว ✅")
-
-    # โหลด Config/Exams
-    try:
-        cfg = gas_get("get_config")
-        if not cfg.get("ok"):
-            st.error(cfg.get("error", "Config error"))
+    if st.button("เข้าสู่ระบบ", use_container_width=True) or key_in:
+        if key_in != TEACHER_KEY:
+            st.error("รหัสผ่านไม่ถูกต้อง")
+            st.stop()
             return
-        exams = cfg["data"]["exams"]
-        active_id = cfg["data"].get("active_exam_id", "")
-    except Exception as e:
-        st.error(f"โหลดข้อมูลล้มเหลว: {e}")
-        return
+        st.success("เข้าสู่ระบบแล้ว ✅")
 
-    if not exams:
-        st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
-        return
-
-    # เลือกชุดข้อสอบ Active
-    id_to_title = {e["exam_id"]: e["title"] for e in exams}
-    options = [e["exam_id"] for e in exams]
-    current_idx = options.index(active_id) if active_id in options else 0
-
-    new_idx = st.selectbox(
-        "เลือกชุดข้อสอบที่จะใช้งาน (Active)",
-        options=list(range(len(options))),
-        index=current_idx,
-        format_func=lambda i: f"{options[i]} — {id_to_title[options[i]]}",
-    )
-    chosen_id = options[new_idx]
-
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("บันทึกให้เป็น Active Exam", type="primary", use_container_width=True):
-            try:
-                js = gas_post("set_active_exam", {"exam_id": chosen_id, "teacher_key": TEACHER_KEY})
-                if js.get("ok"):
-                    st.success(f"ตั้งค่า Active Exam เป็น {chosen_id} เรียบร้อย")
-                elif js.get("error") == "UNAUTHORIZED":
-                    st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY ในชีท Config ของ GAS)")
-                else:
-                    st.error(f"บันทึกไม่สำเร็จ: {js.get('error')}")
-            except Exception as e:
-                st.error(f"บันทึกล้มเหลว: {e}")
-            st.rerun() # ต้องรีรันเพื่อแสดง active_id ใหม่
-    with col2:
-        st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
-        if chosen_id != active_id:
-             st.warning(f"⚠️ ชุดที่เลือก ({chosen_id}) ยังไม่ใช่ชุด Active")
-
-    st.subheader("ผลการสอบของชุดนี้")
-    try:
-        jsr = gas_get("get_dashboard", {"exam_id": chosen_id})
-        if not jsr.get("ok"):
-            st.error(jsr.get("error", "Unknown error"))
-            return
-        records = jsr["data"]
-        if not records:
-            st.info("ยังไม่มีคำตอบของชุดนี้")
+        # โหลด Config/Exams
+        try:
+            cfg = gas_get("get_config")
+            if not cfg.get("ok"):
+                st.error(cfg.get("error", "Config error"))
+                return
+            exams = cfg["data"]["exams"]
+            active_id = cfg["data"].get("active_exam_id", "")
+        except Exception as e:
+            st.error(f"โหลดข้อมูลล้มเหลว: {e}")
             return
 
-        df = pd.DataFrame(records)
-        if "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-            df = df.sort_values("timestamp", ascending=True)
+        if not exams:
+            st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
+            return
 
-        st.subheader("สรุปผลรายคน")
-        show = df[["timestamp", "student_name", "score", "percent", "answers"]].copy()
-        show.columns = ["เวลา", "ชื่อ", "คะแนน", "เปอร์เซ็นต์", "คำตอบ"]
-        st.dataframe(show, hide_index=True, use_container_width=True)
+        # เลือกชุดข้อสอบ Active
+        id_to_title = {e["exam_id"]: e["title"] for e in exams}
+        options = [e["exam_id"] for e in exams]
+        current_idx = options.index(active_id) if active_id in options else 0
 
-        st.subheader("สถิติคะแนนรวม")
-        avg = float(df["percent"].astype(float).mean())
-        best = int(df["percent"].astype(float).max())
-        worst = int(df["percent"].astype(float).min())
-        st.write(f"ค่าเฉลี่ย: {avg:.1f}% | สูงสุด: {best}% | ต่ำสุด: {worst}%")
+        new_idx = st.selectbox(
+            "เลือกชุดข้อสอบที่จะใช้งาน (Active)",
+            options=list(range(len(options))),
+            index=current_idx,
+            format_func=lambda i: f"{options[i]} — {id_to_title[options[i]]}",
+        )
+        chosen_id = options[new_idx]
 
-        # === กราฟคะแนนอ่านง่าย (แนวนอน) ===
-        plot_df = df[["student_name", "percent"]].copy()
-        plot_df["student_name"] = plot_df["student_name"].astype(str).str.strip()
-
-        def wrap_label(s, width=10):
-            return "\n".join(textwrap.wrap(s, width=width))
-
-        plot_df["label"] = plot_df["student_name"].apply(lambda s: wrap_label(s, width=10))
-        plot_df = plot_df.sort_values("percent", ascending=True)
-
-        fig, ax = plt.subplots(figsize=(10, max(3, 0.6 * len(plot_df))))
-        ax.barh(plot_df["label"], plot_df["percent"])
-        ax.set_xlim(0, 100)
-        ax.set_xlabel("Percent", fontsize=12)
-        ax.set_ylabel("นักเรียน", fontsize=12)
-        ax.set_title(f"คะแนน (%) ต่อคน • {chosen_id}", fontsize=14, pad=12)
-        ax.tick_params(axis="both", labelsize=12)
-        for i, v in enumerate(plot_df["percent"].to_list()):
-            ax.text(v + 1, i, f"{int(v)}%", va="center", fontsize=11)
-        plt.tight_layout()
-        st.pyplot(fig, use_container_width=True)
-
-        # === Item Analysis (เปอร์เซ็นต์ตอบถูกรายข้อ) ===
-
-        # --- 1) แปลงคำตอบนักเรียนเป็น list[list[str]] ---
-        answers_lists = []
-        if "answers" in df.columns:
-            for s in df["answers"].astype(str).fillna(""):
-                # split + ทำความสะอาด + ตัดค่าว่าง
-                arr = [a.strip().upper() for a in s.split(",")]
-                arr = [a for a in arr if a]  # ตัดค่าว่าง
-                answers_lists.append(arr)
-        
-        total = len(answers_lists)
-        
-        # --- 2) ลองดึง detail เพื่อดูจำนวนข้อและเฉลยรายข้อ ---
-        first_detail = None
-        qn_detail = 0
-        answer_key_from_detail = None
-        
-        if "detail" in df.columns:
-            for v in df["detail"]:
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("บันทึกให้เป็น Active Exam", type="primary", use_container_width=True):
                 try:
-                    d = v if isinstance(v, list) else _json.loads(v) if isinstance(v, str) else None
-                    if isinstance(d, list) and len(d) > 0:
-                        first_detail = d
-                        break
+                    js = gas_post("set_active_exam", {"exam_id": chosen_id, "teacher_key": TEACHER_KEY})
+                    if js.get("ok"):
+                        st.success(f"ตั้งค่า Active Exam เป็น {chosen_id} เรียบร้อย")
+                    elif js.get("error") == "UNAUTHORIZED":
+                        st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY ในชีท Config ของ GAS)")
+                    else:
+                        st.error(f"บันทึกไม่สำเร็จ: {js.get('error')}")
+                except Exception as e:
+                    st.error(f"บันทึกล้มเหลว: {e}")
+        with col2:
+            st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
+
+        st.subheader("ผลการสอบของชุดนี้")
+        try:
+            jsr = gas_get("get_dashboard", {"exam_id": chosen_id})
+            if not jsr.get("ok"):
+                st.error(jsr.get("error", "Unknown error"))
+                return
+            records = jsr["data"]
+            if not records:
+                st.info("ยังไม่มีคำตอบของชุดนี้")
+                return
+
+            df = pd.DataFrame(records)
+            if "timestamp" in df.columns:
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                df = df.sort_values("timestamp", ascending=True)
+
+            st.subheader("สรุปผลรายคน")
+            show = df[["timestamp", "student_name", "score", "percent", "answers"]].copy()
+            show.columns = ["เวลา", "ชื่อ", "คะแนน", "เปอร์เซ็นต์", "คำตอบ"]
+            st.dataframe(show, hide_index=True, use_container_width=True)
+
+            st.subheader("สถิติคะแนนรวม")
+            avg = float(df["percent"].astype(float).mean())
+            best = int(df["percent"].astype(float).max())
+            worst = int(df["percent"].astype(float).min())
+            st.write(f"ค่าเฉลี่ย: {avg:.1f}% | สูงสุด: {best}% | ต่ำสุด: {worst}%")
+
+            # === กราฟคะแนนอ่านง่าย (แนวนอน) ===
+            plot_df = df[["student_name", "percent"]].copy()
+            plot_df["student_name"] = plot_df["student_name"].astype(str).str.strip()
+
+            def wrap_label(s, width=10):
+                return "\n".join(textwrap.wrap(s, width=width))
+
+            plot_df["label"] = plot_df["student_name"].apply(lambda s: wrap_label(s, width=10))
+            plot_df = plot_df.sort_values("percent", ascending=True)
+
+            fig, ax = plt.subplots(figsize=(10, max(3, 0.6 * len(plot_df))))
+            ax.barh(plot_df["label"], plot_df["percent"])
+            ax.set_xlim(0, 100)
+            ax.set_xlabel("Percent", fontsize=12)
+            ax.set_ylabel("นักเรียน", fontsize=12)
+            ax.set_title(f"คะแนน (%) ต่อคน • {chosen_id}", fontsize=14, pad=12)
+            ax.tick_params(axis="both", labelsize=12)
+            for i, v in enumerate(plot_df["percent"].to_list()):
+                ax.text(v + 1, i, f"{int(v)}%", va="center", fontsize=11)
+            plt.tight_layout()
+            st.pyplot(fig, use_container_width=True)
+
+            # ======================= Item Analysis (รวมเข้ากับโค้ดเดิม) =======================
+            from collections import Counter
+            import json as _json
+
+            # --- 1) แปลงคำตอบนักเรียนเป็น list[list[str]] ---
+            answers_lists = []
+            if "answers" in df.columns:
+                for s in df["answers"].astype(str).fillna(""):
+                    # split + ทำความสะอาด + ตัดค่าว่าง
+                    arr = [a.strip().upper() for a in s.split(",")]
+                    arr = [a for a in arr if a]  # ตัดค่าว่าง
+                    answers_lists.append(arr)
+            else:
+                answers_lists = []
+
+            total = len(answers_lists)
+
+            # --- 2) ลองดึง detail เพื่อดูจำนวนข้อจากเฉลยรายข้อ ---
+            first_detail = None
+            if "detail" in df.columns:
+                for v in df["detail"]:
+                    try:
+                        d = v if isinstance(v, list) else _json.loads(v) if isinstance(v, str) else None
+                        if isinstance(d, list) and len(d) > 0:
+                            first_detail = d
+                            break
+                    except Exception:
+                        pass
+            qn_detail = len(first_detail) if isinstance(first_detail, list) else 0
+
+            # --- 3) ลองดึง answer_key ของชุดนี้ (ถ้ามี) ---
+            answer_key = None
+            # ถ้ามี detail → ดึงเฉลยจาก detail
+            if isinstance(first_detail, list):
+                answer_key = [str(x.get("correct","")).strip().upper() if isinstance(x, dict) else "" for x in first_detail]
+
+            # ถ้ายังไม่มี → ลอง get_active_exam (ใช้เฉพาะเมื่อ exam_id ตรง)
+            if answer_key is None:
+                try:
+                    ex = gas_get("get_active_exam")
+                    if ex.get("ok") and str(ex["data"].get("exam_id","")) == str(chosen_id):
+                        k = str(ex["data"].get("answer_key","") or "")
+                        answer_key = [c.strip().upper() for c in list(k)]
                 except Exception:
                     pass
-        
-        if isinstance(first_detail, list):
-            qn_detail = len(first_detail)
-            answer_key_from_detail = [str(x.get("correct","")).strip().upper() if isinstance(x, dict) else "" for x in first_detail]
+            key_len = len(answer_key) if isinstance(answer_key, list) else 0
 
-        # --- 3) ลองดึง answer_key ของชุดนี้จาก Active Exam (ถ้ายังไม่มี) ---
-        answer_key = answer_key_from_detail
-        if answer_key is None:
-            try:
-                ex = gas_get("get_active_exam")
-                if ex.get("ok") and str(ex["data"].get("exam_id","")) == str(chosen_id):
-                    k = str(ex["data"].get("answer_key","") or "")
-                    answer_key = [c.strip().upper() for c in list(k)]
-            except Exception:
-                pass
-        
-        key_len = len(answer_key) if isinstance(answer_key, list) else 0
-        
-        # --- 4) เอาจำนวนข้อจาก "คำตอบจริง" ของนักเรียนแบบเสียงข้างมาก ---
-        lens = [len(a) for a in answers_lists]
-        maj_len = Counter(lens).most_common(1)[0][0] if lens else 0
-        
-        # --- 5) สรุปจำนวนข้อที่เชื่อถือได้ที่สุด (qn_items) ---
-        candidates = [x for x in [maj_len, qn_detail, key_len] if x and x > 0]
-        qn_items = max(candidates) if candidates else 0
-        
-        if qn_items == 0 or total == 0:
-            st.info("ยังไม่มีคำตอบ/จำนวนข้อเพียงพอสำหรับการวิเคราะห์รายข้อ")
-            return
-        
-        # --- 6) บังคับให้ทุกอย่างยาวเท่า qn_items (truncate/pad) ---
-        answers_lists = [arr[:qn_items] for arr in answers_lists]
-        if isinstance(answer_key, list):
-            # ใช้เฉลยที่ยาวที่สุด
-            if len(answer_key) < qn_items:
-                 answer_key.extend([""] * (qn_items - len(answer_key)))
+            # --- 4) เอาจำนวนข้อจาก "คำตอบจริง" ของนักเรียนแบบเสียงข้างมาก ---
+            lens = [len(a) for a in answers_lists]
+            maj_len = Counter(lens).most_common(1)[0][0] if lens else 0
+
+            # --- 5) สรุปจำนวนข้อที่เชื่อถือได้ที่สุด ---
+            candidates = [x for x in [maj_len, qn_detail, key_len] if x and x > 0]
+            qn = min(candidates) if candidates else 0
+
+            if qn == 0 or total == 0:
+                st.info("ยังไม่มีคำตอบ/จำนวนข้อเพียงพอสำหรับการวิเคราะห์รายข้อ")
             else:
-                 answer_key = answer_key[:qn_items]
-        
-        # 3) แจกแจงการเลือกตัวเลือกต่อข้อ
-        option_counts = [Counter() for _ in range(qn_items)]
-        valid_opts = ["A", "B", "C", "D", "E"]
-        for arr in answers_lists:
-            for i in range(qn_items):
-                opt = arr[i].upper() if i < len(arr) else ""
-                opt = opt if opt in valid_opts else "(blank)"
-                option_counts[i][opt] += 1
+                # --- 6) บังคับให้ทุกอย่างยาวเท่า qn (truncate) ---
+                answers_lists = [arr[:qn] for arr in answers_lists]
+                if isinstance(answer_key, list):
+                    answer_key = answer_key[:qn]
 
-        # 4) ถ้ามีเฉลย → คำนวณถูก/ผิดต่อข้อ
-        if answer_key is not None and any(answer_key):
-            correct_counts = [0] * qn_items
-            for arr in answers_lists:
-                for i in range(qn_items):
-                    stu = arr[i].upper() if i < len(arr) else ""
-                    key = answer_key[i] if i < len(answer_key) else ""
-                    if stu and key and (stu == key):
-                        correct_counts[i] += 1
-            wrong_counts = [total - c for c in correct_counts]
-            perc_correct = [round((c * 100) / total) if total > 0 else 0 for c in correct_counts]
+                # 7) แจกแจงการเลือกตัวเลือกต่อข้อ (fallback ทำงานได้เสมอ)
+                option_counts = [Counter() for _ in range(qn)]
+                valid_opts = ["A", "B", "C", "D", "E"]
+                for arr in answers_lists:
+                    for i in range(qn):
+                        opt = arr[i].upper() if i < len(arr) else ""
+                        opt = opt if opt in valid_opts else "(blank)"
+                        option_counts[i][opt] += 1
 
-            item_df = pd.DataFrame({
-                "ข้อ": [i + 1 for i in range(qn_items)],
-                "เฉลย": answer_key,
-                "ถูก(คน)": correct_counts,
-                "ผิด(คน)": wrong_counts,
-                "%ถูก": perc_correct,
-            })
+                # 8) ถ้ามีเฉลย → คำนวณถูก/ผิดต่อข้อ
+                if isinstance(answer_key, list) and any(answer_key):
+                    correct_counts = [0] * qn
+                    for arr in answers_lists:
+                        for i in range(qn):
+                            stu = arr[i].upper() if i < len(arr) else ""
+                            key = answer_key[i] if i < len(answer_key) else ""
+                            if stu and key and (stu == key):
+                                correct_counts[i] += 1
+                    wrong_counts = [total - c for c in correct_counts]
+                    perc_correct = [round((c * 100) / total) if total > 0 else 0 for c in correct_counts]
 
-            st.subheader("📌 Item Analysis — สรุปการตอบถูกรายข้อ")
-            st.dataframe(item_df, hide_index=True, use_container_width=True)
+                    item_df = pd.DataFrame({
+                        "ข้อ": [i + 1 for i in range(qn)],
+                        "ถูก(คน)": correct_counts,
+                        "ผิด(คน)": wrong_counts,
+                        "%ถูก": perc_correct,
+                    })
 
-            # กราฟ % ถูก (เรียงจากยาก→ง่าย)
-            plot1 = item_df.sort_values("%ถูก", ascending=True)
-            fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot1))))
-            ax1.barh(plot1["ข้อ"].astype(str), plot1["%ถูก"])
-            ax1.set_xlabel("% ถูก", fontsize=12)
-            ax1.set_ylabel("ข้อ", fontsize=12)
-            ax1.set_xlim(0, 100)
-            ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยากไปง่าย)", fontsize=14, pad=12)
-            for i, v in enumerate(plot1["%ถูก"].tolist()):
-                ax1.text(v + 1, i, f"{v}%", va="center", fontsize=11)
-            plt.tight_layout()
-            st.pyplot(fig1, use_container_width=True)
+                    st.subheader("📌 Item Analysis — สรุปการตอบถูกรายข้อ")
+                    st.dataframe(item_df, hide_index=True, use_container_width=True)
 
-            # กราฟซ้อน ถูก/ผิด ต่อข้อ
-            plot2 = item_df.copy()
-            fig2, ax2 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot2))))
-            y = plot2["ข้อ"].astype(str)
-            ax2.barh(y, plot2["ผิด(คน)"], label="Wrong")
-            ax2.barh(y, plot2["ถูก(คน)"], left=plot2["ผิด(คน)"], label="Correct")
-            ax2.set_xlabel("จำนวนนักเรียน", fontsize=12)
-            ax2.set_ylabel("ข้อ", fontsize=12)
-            ax2.set_title("จำนวนถูก/ผิด ต่อข้อ (Stacked)", fontsize=14, pad=12)
-            ax2.legend(loc="lower right")
-            plt.tight_layout()
-            st.pyplot(fig2, use_container_width=True)
+                    # กราฟ % ถูก (เรียงจากยาก→ง่าย)
+                    plot1 = item_df.sort_values("%ถูก", ascending=True)
+                    fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot1))))
+                    ax1.barh(plot1["ข้อ"].astype(str), plot1["%ถูก"])
+                    ax1.set_xlabel("% ถูก", fontsize=12)
+                    ax1.set_ylabel("ข้อ", fontsize=12)
+                    ax1.set_xlim(0, 100)
+                    ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยาก→ง่าย)", fontsize=14, pad=12)
+                    for i, v in enumerate(plot1["%ถูก"].tolist()):
+                        ax1.text(v + 1, i, f"{v}%", va="center", fontsize=11)
+                    plt.tight_layout()
+                    st.pyplot(fig1, use_container_width=True)
 
-            # สรุปข้อยากที่สุด
-            hardest = plot1.iloc[0]
-            st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: ข้อ {hardest['ข้อ']} (ถูก {hardest['%ถูก']}%, เฉลย: {hardest['เฉลย']})")
+                    # กราฟซ้อน ถูก/ผิด ต่อข้อ
+                    plot2 = item_df.copy()
+                    fig2, ax2 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot2))))
+                    y = plot2["ข้อ"].astype(str)
+                    ax2.barh(y, plot2["ผิด(คน)"], label="Wrong")
+                    ax2.barh(y, plot2["ถูก(คน)"], left=plot2["ผิด(คน)"], label="Correct")
+                    ax2.set_xlabel("จำนวนนักเรียน", fontsize=12)
+                    ax2.set_ylabel("ข้อ", fontsize=12)
+                    ax2.set_title("จำนวนถูก/ผิด ต่อข้อ (Stacked)", fontsize=14, pad=12)
+                    ax2.legend(loc="lower right")
+                    plt.tight_layout()
+                    st.pyplot(fig2, use_container_width=True)
 
-        else:
-            # 5) ไม่มีเฉลย → แสดงกราฟ distribution ต่อข้อ (A–E/เว้นว่าง)
-            st.subheader("📌 Item Analysis — แจกแจงตัวเลือกต่อข้อ (ยังไม่ทราบเฉลย)")
-            dist_df = []
-            all_opts = ["A", "B", "C", "D", "E", "(blank)"]
-            for i, cnt in enumerate(option_counts, start=1):
-                row = {"ข้อ": i}
-                for o in all_opts:
-                    row[o] = cnt.get(o, 0)
-                dist_df.append(row)
-            dist_df = pd.DataFrame(dist_df)
-            st.dataframe(dist_df, hide_index=True, use_container_width=True)
+                    # สรุปข้อยากที่สุด
+                    hardest = plot1.iloc[0]
+                    st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: ข้อ {hardest['ข้อ']} (ถูก {hardest['%ถูก']}%)")
+                else:
+                    # 9) ไม่มีเฉลย → แสดงกราฟ distribution ต่อข้อ (A–E/เว้นว่าง)
+                    st.subheader("📌 Item Analysis — แจกแจงตัวเลือกต่อข้อ (ยังไม่ทราบเฉลย)")
+                    dist_df = []
+                    all_opts = ["A", "B", "C", "D", "E", "(blank)"]
+                    for i, cnt in enumerate(option_counts, start=1):
+                        row = {"ข้อ": i}
+                        for o in all_opts:
+                            row[o] = cnt.get(o, 0)
+                        dist_df.append(row)
+                    dist_df = pd.DataFrame(dist_df)
+                    st.dataframe(dist_df, hide_index=True, use_container_width=True)
 
-            # กราฟ stacked distribution
-            figd, axd = plt.subplots(figsize=(10, max(3.5, 0.55 * len(dist_df))))
-            y = dist_df["ข้อ"].astype(str)
-            left = [0] * len(dist_df)
-            for o in all_opts:
-                vals = dist_df[o].tolist()
-                axd.barh(y, vals, left=left, label=o)
-                left = [l + v for l, v in zip(left, vals)]
-            axd.set_xlabel("จำนวนนักเรียน", fontsize=12)
-            axd.set_ylabel("ข้อ", fontsize=12)
-            axd.set_title("Distribution ตัวเลือกต่อข้อ (A–E/เว้นว่าง)", fontsize=14, pad=12)
-            axd.legend(loc="lower right", ncol=3)
-            plt.tight_layout()
-            st.pyplot(figd, use_container_width=True)
+                    # กราฟ stacked distribution
+                    figd, axd = plt.subplots(figsize=(10, max(3.5, 0.55 * len(dist_df))))
+                    y = dist_df["ข้อ"].astype(str)
+                    left = [0] * len(dist_df)
+                    for o in all_opts:
+                        vals = dist_df[o].tolist()
+                        axd.barh(y, vals, left=left, label=o)
+                        left = [l + v for l, v in zip(left, vals)]
+                    axd.set_xlabel("จำนวนนักเรียน", fontsize=12)
+                    axd.set_ylabel("ข้อ", fontsize=12)
+                    axd.set_title("Distribution ตัวเลือกต่อข้อ (A–E/เว้นว่าง)", fontsize=14, pad=12)
+                    axd.legend(loc="lower right", ncol=3)
+                    plt.tight_layout()
+                    st.pyplot(figd, use_container_width=True)
 
-            st.info("ℹ️ ต้องมีเฉลย (answer_key) จึงจะคำนวณถูก/ผิดต่อข้อได้ — "
-                    "ทำได้โดยตั้งชุดนี้ให้เป็น Active (เพื่อดึงจาก get_active_exam) "
-                    "หรือเพิ่ม endpoint ฝั่ง GAS ที่คืน answer_key ของชุดที่เลือก")
-
-    except Exception as e:
-        st.error(f"โหลดข้อมูลล้มเหลว: {e}")
+                    st.info("ℹ️ ต้องมีเฉลย (answer_key) จึงจะคำนวณถูก/ผิดต่อข้อได้ — "
+                            "ทำได้โดยตั้งชุดนี้ให้เป็น Active (เพื่อดึงจาก get_active_exam) "
+                            "หรือเพิ่ม endpoint ฝั่ง GAS ที่คืน answer_key ของชุดที่เลือก")
+        except Exception as e:
+            st.error(f"โหลดข้อมูลล้มเหลว: {e}")
 
 # ----------------------------------------------------------------------
 # ====================== Run Main App ======================
