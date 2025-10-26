@@ -7,7 +7,7 @@ import matplotlib as mpl
 import textwrap
 import os, urllib.request
 
-plt.rcParams['font.family'] = Tahoma
+plt.rcParams['font.family'] = 'tahoma'
 mpl.font_manager.fontManager.addfont('thsarabunnew-webfont.ttf')
 mpl.rc('font', family='TH Sarabun New', size=20)
 
