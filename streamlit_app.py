@@ -4,21 +4,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import textwrap
-import matplotlib.font_manager as fm
 import os, urllib.request
-
-def ensure_thai_font():
-    """ตั้งค่าให้ Matplotlib ใช้ฟอนต์ไทย"""
-    font_path = os.path.join(os.path.dirname(__file__), "fonts", "NotoSansThai-Regular.ttf")
-    if os.path.exists(font_path):
-        fm.fontManager.addfont(font_path)
-        plt.rcParams["font.family"] = ["Noto Sans Thai", "DejaVu Sans", "sans-serif"]
-        plt.rcParams["axes.unicode_minus"] = False
-    else:
-        print("⚠️ ไม่พบฟอนต์ NotoSansThai-Regular.ttf")
-        
-# เรียกครั้งเดียวก่อนวาดกราฟ
-ensure_thai_font()
 
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
@@ -240,8 +226,6 @@ def page_dashboard():
             st.write(f"ค่าเฉลี่ย: {avg:.1f}% | สูงสุด: {best}% | ต่ำสุด: {worst}%")
 
             # === กราฟคะแนนอ่านง่าย (แนวนอน) ===
-            ensure_thai_font() 
-            
             plot_df = df[["student_name", "percent"]].copy()
             plot_df["student_name"] = plot_df["student_name"].astype(str).str.strip()
             def wrap_label(s, width=10):
