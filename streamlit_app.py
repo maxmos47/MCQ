@@ -2,6 +2,8 @@ import json
 import requests
 import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
+import textwrap
 
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
