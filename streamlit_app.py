@@ -166,7 +166,7 @@ def is_within_window(start_utc: str, end_utc: str) -> tuple[bool, str]:
         return True, f"ไม่สามารถตรวจสอบเวลาได้ ({e})"
 
 def page_exam():
-    load_css()
+    #load_css()
     st.markdown("### 📝 กระดาษคำตอบ MCQ Resident ER-Rajavithi")
     if not GAS_WEBAPP_URL:
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
