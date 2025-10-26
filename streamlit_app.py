@@ -323,10 +323,7 @@ def page_dashboard():
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
 
-                # === Item Analysis — รองรับกรณีไม่มี detail ด้วย ===
-        import json as _json
         from collections import Counter, defaultdict
-        
         # 0) เตรียม answers ของนักเรียนเป็น list[list[str]]
         answers_lists = []
         if "answers" in df.columns:
