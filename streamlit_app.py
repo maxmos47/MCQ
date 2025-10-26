@@ -410,7 +410,7 @@ def page_dashboard():
                     ax1.set_xlabel("% ถูก", fontsize=12)
                     ax1.set_ylabel("ข้อ", fontsize=12)
                     ax1.set_xlim(0, 100)
-                    ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยาก→ง่าย)", fontsize=14, pad=12)
+                    ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยากไปง่าย)", fontsize=14, pad=12)
                     for i, v in enumerate(plot1["%ถูก"].tolist()):
                         ax1.text(v + 1, i, f"{v}%", va="center", fontsize=11)
                     plt.tight_layout()
