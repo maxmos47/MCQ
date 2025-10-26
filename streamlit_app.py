@@ -411,8 +411,6 @@ def page_dashboard():
         
         # 📌 FIX: chosen_id ถูกกำหนดค่าไว้ที่นี่ก่อนนำไปใช้ในฟอร์ม
         chosen_id = options[new_idx] 
-        
-        # ดึงข้อมูลชุดข้อสอบปัจจุบันเพื่อใช้ในการตั้งค่าเริ่มต้น
         current_exam = next((e for e in exams if e["exam_id"] == chosen_id), {})
         
         # ------------------- ส่วนควบคุม Active Exam -------------------
@@ -432,7 +430,7 @@ def page_dashboard():
                     st.error(f"บันทึกล้มเหลว: {e}")
         with col2:
             st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
-            # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ (แบบอิสระ) -------------------
+            # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ (อิสระ & 1 นาที Step) -------------------
         st.divider()
         st.subheader(f"⏰ ตั้งค่าช่วงเวลาสอบสำหรับชุด: {chosen_id}") 
         
@@ -440,11 +438,11 @@ def page_dashboard():
         def parse_datetime_ict(utc_iso: str):
             from datetime import datetime, timedelta
             try:
-                if not utc_iso: return None # คืนค่า None ถ้าไม่มี
+                if not utc_iso: return None
                 dt_utc = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
                 return dt_utc + timedelta(hours=7)
             except:
-                return None # คืนค่า None หากเกิดข้อผิดพลาด
+                return None
         
         # กำหนดค่าเริ่มต้นตามข้อมูลที่มีใน GAS หรือใช้ None
         start_utc_default = current_exam.get("window_start_utc", "")
@@ -453,87 +451,117 @@ def page_dashboard():
         default_start_ict = parse_datetime_ict(start_utc_default)
         default_end_ict = parse_datetime_ict(end_utc_default)
         
-        # ตัวควบคุม Checkbox
-        set_start = st.checkbox(
-            "กำหนดเวลาเริ่มต้น", 
-            value=bool(default_start_ict), 
-            key="chk_start"
-        )
-        set_end = st.checkbox(
-            "กำหนดเวลาสิ้นสุด", 
-            value=bool(default_end_ict), 
-            key="chk_end"
-        )
-        
-        # กำหนดค่าเริ่มต้นสำหรับ Date/Time Input ถ้ามีการเช็ค
-        # ถ้าไม่มีค่าเดิม ให้ใช้เวลาปัจจุบันของไทย
+        # กำหนดค่าเริ่มต้นสำหรับ Date/Time Input
+        from datetime import datetime, timedelta
         start_date_val = default_start_ict.date() if default_start_ict else datetime.now().date()
         start_time_val = default_start_ict.time() if default_start_ict else datetime.now().time()
         end_date_val = default_end_ict.date() if default_end_ict else (datetime.now() + timedelta(hours=1)).date()
         end_time_val = default_end_ict.time() if default_end_ict else (datetime.now() + timedelta(hours=1)).time()
-        
+
+        # 📌 การจัดการ Session State สำหรับปุ่ม Clear (สำคัญมาก)
+        if 'clear_start_triggered' not in st.session_state:
+            st.session_state.clear_start_triggered = False
+        if 'clear_end_triggered' not in st.session_state:
+            st.session_state.clear_end_triggered = False
+
+        # 📌 กำหนดค่าเริ่มต้นให้ start/end date/time เป็น None เพื่อใช้ใน logic การบันทึก
+        start_date, start_time = None, None
+        end_date, end_time = None, None
         
         with st.form("exam_window_form", border=True):
             st.markdown("##### กำหนดช่วงเวลา (เวลาประเทศไทย)")
             
             # --- START TIME ---
-            st.caption("เวลาเริ่มต้น:")
-            if set_start:
-                col_s_date, col_s_time = st.columns(2)
-                with col_s_date:
-                    start_date = st.date_input("วันที่เริ่มต้น", value=start_date_val, key="in_start_date")
-                with col_s_time:
-                    start_time = st.time_input("เวลาเริ่มต้น", value=start_time_val, key="in_start_time")
-            else:
-                start_date, start_time = None, None # กำหนดให้เป็น None ถ้าไม่ได้เช็ค
-
+            st.caption("✅ เวลาเริ่มต้น (ถ้าไม่กำหนด ให้กด 'ล้างเวลาเริ่มต้น'):")
+            
+            # สร้าง Input Fields ด้วยค่า default
+            col_s_date, col_s_time, col_s_clear = st.columns([1, 1, 0.4])
+            
+            with col_s_date:
+                # Input fields ต้องอยู่ภายใน form เสมอ
+                start_date = st.date_input("วันที่เริ่มต้น", value=start_date_val, key="in_start_date")
+            with col_s_time:
+                # 📌 FIX: เพิ่ม step=60 เพื่อให้ตั้งเวลาได้ละเอียดถึง 1 นาที
+                start_time = st.time_input("เวลาเริ่มต้น", value=start_time_val, key="in_start_time", step=60)
+            with col_s_clear:
+                st.write("") # Spacer
+                st.write("") # Spacer
+                if st.button("ล้างเวลาเริ่มต้น", key="btn_clear_start"):
+                    st.session_state.clear_start_triggered = True
+                    st.rerun() 
+            
             st.divider()
 
             # --- END TIME ---
-            st.caption("เวลาสิ้นสุด:")
-            if set_end:
-                col_e_date, col_e_time = st.columns(2)
-                with col_e_date:
-                    end_date = st.date_input("วันที่สิ้นสุด", value=end_date_val, key="in_end_date")
-                with col_e_time:
-                    end_time = st.time_input("เวลาสิ้นสุด", value=end_time_val, key="in_end_time")
-            else:
-                end_date, end_time = None, None # กำหนดให้เป็น None ถ้าไม่ได้เช็ค
+            st.caption("🛑 เวลาสิ้นสุด (ถ้าไม่กำหนด ให้กด 'ล้างเวลาสิ้นสุด'):")
+            
+            col_e_date, col_e_time, col_e_clear = st.columns([1, 1, 0.4])
+            
+            with col_e_date:
+                end_date = st.date_input("วันที่สิ้นสุด", value=end_date_val, key="in_end_date")
+            with col_e_time:
+                # 📌 FIX: เพิ่ม step=60 เพื่อให้ตั้งเวลาได้ละเอียดถึง 1 นาที
+                end_time = st.time_input("เวลาสิ้นสุด", value=end_time_val, key="in_end_time", step=60)
+            with col_e_clear:
+                st.write("") # Spacer
+                st.write("") # Spacer
+                if st.button("ล้างเวลาสิ้นสุด", key="btn_clear_end"):
+                    st.session_state.clear_end_triggered = True
+                    st.rerun()
 
             st.divider()
             submit_window = st.form_submit_button("บันทึกช่วงเวลาสอบ", type="primary", use_container_width=True)
 
-        if submit_window:
-            # 2. แปลงเป็น UTC ISO String เพื่อส่งไป GAS
-            start_utc_iso = ict_to_utc_iso(start_date, start_time) # จะคืนค่า "" ถ้าเป็น None
-            end_utc_iso = ict_to_utc_iso(end_date, end_time) # จะคืนค่า "" ถ้าเป็น None
+        # 📌 Logic หลังจาก Form ถูก Submit หรือปุ่ม Clear ถูกกด
+        if submit_window or st.session_state.clear_start_triggered or st.session_state.clear_end_triggered:
+            
+            # 1. จัดการการล้างเวลา
+            # ถ้าปุ่ม Clear ถูกกดในรอบที่แล้ว (clear_triggered เป็น True ในรอบนี้)
+            # เราจะ override ค่าที่มาจาก form inputs ให้เป็น None
+            final_start_date, final_start_time = start_date, start_time
+            final_end_date, final_end_time = end_date, end_time
+            
+            if st.session_state.clear_start_triggered:
+                final_start_date, final_start_time = None, None
+                st.session_state.clear_start_triggered = False # Reset state
+            
+            if st.session_state.clear_end_triggered:
+                final_end_date, final_end_time = None, None
+                st.session_state.clear_end_triggered = False # Reset state
+
+            # 2. แปลงเป็น UTC ISO String เพื่อส่งไป GAS (ใช้ final_... ที่ผ่านการตรวจสอบ Clear แล้ว)
+            # ต้องมั่นใจว่า ict_to_utc_iso ถูกนิยามไว้และรองรับ None (คืนค่า "")
+            start_utc_iso = ict_to_utc_iso(final_start_date, final_start_time) 
+            end_utc_iso = ict_to_utc_iso(final_end_date, final_end_time) 
 
             # ตรวจสอบความถูกต้องเฉพาะเมื่อมีการกำหนดช่วงเวลาทั้งคู่
             if start_utc_iso and end_utc_iso and start_utc_iso >= end_utc_iso:
                 st.error("เวลาเริ่มต้นต้องอยู่ก่อนเวลาสิ้นสุด")
-                st.stop()
-            
-            # 3. เรียก GAS Endpoint 
-            with st.spinner("กำลังบันทึกช่วงเวลา..."):
-                try:
-                    js_win = gas_post("set_exam_window", {
-                        "exam_id": chosen_id, 
-                        "window_start_utc": start_utc_iso,
-                        "window_end_utc": end_utc_iso,
-                        "teacher_key": TEACHER_KEY
-                    })
+            else:
+                # 3. เรียก GAS Endpoint 
+                with st.spinner("กำลังบันทึกช่วงเวลา..."):
+                    try:
+                        js_win = gas_post("set_exam_window", {
+                            "exam_id": chosen_id, 
+                            "window_start_utc": start_utc_iso, 
+                            "window_end_utc": end_utc_iso,     
+                            "teacher_key": TEACHER_KEY
+                        })
 
-                    if js_win.get("ok"):
-                        if start_utc_iso or end_utc_iso:
-                            msg = f"บันทึกช่วงเวลาสอบสำเร็จ: **Start:** {start_utc_iso or 'ไม่กำหนด'} | **End:** {end_utc_iso or 'ไม่กำหนด'}"
+                        if js_win.get("ok"):
+                            if start_utc_iso or end_utc_iso:
+                                msg = f"บันทึกช่วงเวลาสอบสำเร็จ: **Start:** {start_utc_iso or 'ไม่กำหนด'} | **End:** {end_utc_iso or 'ไม่กำหนด'}"
+                            else:
+                                msg = "ล้างช่วงเวลาสอบแล้ว (ไม่กำหนดช่วงเวลา)"
+                            st.success(msg)
+                            st.rerun() 
+                        elif js_win.get("error") == "UNAUTHORIZED":
+                            st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY ในชีท Config ของ GAS)")
                         else:
-                            msg = "ล้างช่วงเวลาสอบแล้ว (ไม่กำหนดช่วงเวลา)"
-                        st.success(msg)
-                        st.rerun() 
-                    # ... โค้ดจัดการ Error ...
-                    # ...
-                except Exception as e:
-                    st.error(f"บันทึกล้มเหลว: {e}")
+                            st.error(f"บันทึกไม่สำเร็จ: {js_win.get('error')}")
+                            
+                    except Exception as e:
+                        st.error(f"บันทึกล้มเหลว: {e}")
         # ------------------- 📌 END NEW FEATURE -------------------
         st.subheader("ผลการสอบของชุดนี้")
         try:
