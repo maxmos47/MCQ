@@ -42,6 +42,7 @@ if isinstance(raw_mode, list) and raw_mode:
 mode = str(raw_mode).strip().lower()
 
 # ====================== Student Page ======================
+# ====================== Student Page ======================
 def page_exam():
     st.markdown("### 📝 กระดาษคำตอบ MCQ (มือถือ) — ชุดข้อสอบที่อาจารย์กำหนด")
     if not GAS_WEBAPP_URL:
@@ -64,125 +65,24 @@ def page_exam():
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    # 2) Session state
+    # 2) Session state (เรียบง่าย ไม่มีตัวจับเวลาอีกต่อไป)
     ss = st.session_state
-    ss.setdefault("submitted", False)
-    ss.setdefault("pending_submit_payload", None)
+    ss.setdefault("submitted", False)                # ล็อคถาวรหลังส่งสำเร็จ
+    ss.setdefault("pending_submit_payload", None)    # ใช้ล็อคตอนกำลังส่ง
     ss.setdefault("submit_result", None)
     ss.setdefault("submit_error", None)
     ss.setdefault("answers", [""] * qn)
-    ss.setdefault("auto_name", "")
-    ss.setdefault("auto_submit_done", False)
-    ss.setdefault("suppress_autorefresh", False)
 
+    # ถ้ามีผลลัพธ์แล้ว ให้ล็อคทันที
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
-       # 3) ตัวจับเวลา
-    DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))
-    timer_key = f"timer_end_{exam_id}"
-    if timer_key not in ss:
-        ss[timer_key] = time.time() + DURATION_MIN * 60
-    end_ts = ss[timer_key]
-    remaining_sec = max(0, int(end_ts - time.time()))
+    # 3) สร้างฟอร์ม (ไม่ rerun ระหว่างเปลี่ยน radio)
+    is_pending = ss["pending_submit_payload"] is not None
+    disabled_all = ss["submitted"] or is_pending
 
-    # 3.1) แสดง countdown เสมอ (วางก่อน autorefresh เพื่อไม่ให้หาย)
-    unique_flag = f"timeup-reloaded-{exam_id}-{int(end_ts)}"
-    components.html(f"""
-    <div style='font-size:1.1rem;font-weight:600;margin:0.25rem 0;'>
-      ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
-    </div>
-    <script>
-      const end = {int(end_ts*1000)};
-      const t = document.getElementById("t");
-      const flagKey = "{unique_flag}";
-      function pad(n){{return n.toString().padStart(2,'0');}}
-      function tick() {{
-        const now = Date.now();
-        let s = Math.max(0, Math.floor((end - now)/1000));
-        const m = Math.floor(s/60);
-        const ss = s % 60;
-        t.textContent = pad(m)+":"+pad(ss);
-        if (s <= 0) {{
-          // reload ครั้งเดียวตอนหมดเวลา (กันลูปด้วย sessionStorage)
-          if (!sessionStorage.getItem(flagKey)) {{
-            sessionStorage.setItem(flagKey, '1');
-            const url = new URL(window.location.href);
-            url.searchParams.set('timeup','1');
-            url.searchParams.set('ts', Date.now().toString());
-            window.location.replace(url.toString());
-          }}
-        }}
-      }}
-      tick();
-      setInterval(tick, 250);
-    </script>
-    """, height=40)
-
-    # 3.2) Autorefresh แบบปรับเฟส (ต้องวาง "หลัง" countdown)
-    is_pending = ss.get("pending_submit_payload") is not None
-    suppress = ss.get("suppress_autorefresh", False)
-    submitted = ss.get("submitted", False)
-
-    want_refresh = (not submitted) and (not is_pending) and (not suppress) and (remaining_sec > 0)
-    if want_refresh:
-        if remaining_sec > 60:
-            interval_ms, limit, phase = 30000, max(1, remaining_sec // 30), "p30"
-        elif remaining_sec > 20:
-            interval_ms, limit, phase = 5000,  max(1, remaining_sec // 5),  "p5"
-        elif remaining_sec > 5:
-            interval_ms, limit, phase = 2000,  max(1, remaining_sec // 2),  "p2"
-        else:
-            interval_ms, limit, phase = 1000,  remaining_sec,               "p1"
-
-        st_autorefresh(
-            interval=interval_ms,
-            limit=limit,
-            key=f"ar-{exam_id}-{int(end_ts)}-{phase}",
-        )
-
-    # 3.3) หมดเวลา → บังคับส่งอัตโนมัติ (เหมือนเดิม)
-    timeup_flag = st.query_params.get("timeup", "0")
-    is_timeup = (remaining_sec == 0) or (str(timeup_flag).strip() == "1")
-    if is_timeup and (not ss.get("submitted", False)) and (not ss.get("auto_submit_done", False)):
-        ss["suppress_autorefresh"] = True
-        st.warning("⏰ หมดเวลาทำข้อสอบ ระบบกำลังส่งคำตอบให้อัตโนมัติ…")
-        payload = {
-            "exam_id": exam_id,
-            "student_name": ss.get("auto_name", "").strip() or "Unnamed",
-            "answers": ss.get("answers", [""] * qn),
-        }
-        try:
-            js2 = gas_post("submit", payload)
-            if js2.get("ok"):
-                ss["submit_result"] = js2["data"]
-                ss["submitted"] = True
-                ss["submit_error"] = None
-            else:
-                ss["submit_error"] = js2.get("error", "ส่งคำตอบไม่สำเร็จ")
-        except Exception as e:
-            ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
-        finally:
-            ss["auto_submit_done"] = True
-            # ล้าง timeup param ไม่ให้ทริกเกอร์ซ้ำ
-            try:
-                qp = dict(st.query_params)
-                if "timeup" in qp:
-                    del qp["timeup"]
-                st.query_params.update(qp)
-            except Exception:
-                pass
-        st.rerun()
-
-    # 4) ควบคุมการปิด/เปิดอินพุต
-    is_pending = ss.get("pending_submit_payload") is not None
-    disabled_all = ss["submitted"] or is_pending or (remaining_sec == 0)
-
-    # 5) ฟอร์ม (ไม่ rerun ระหว่างเลือก radio)
-    form_disabled = disabled_all
     with st.form("exam_form", clear_on_submit=False):
-        name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
-        ss["auto_name"] = name.strip()
+        name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=disabled_all)
 
         options = ["A", "B", "C", "D", "E"]
         if len(ss["answers"]) != qn:
@@ -195,7 +95,7 @@ def page_exam():
                 options=[""] + options,
                 index=([""] + options).index(current) if current in ([""] + options) else 0,
                 horizontal=True,
-                disabled=form_disabled,
+                disabled=disabled_all,
                 key=f"q_{i+1}_radio_form",
             )
             ss["answers"][i] = choice
@@ -205,18 +105,13 @@ def page_exam():
             "ส่งคำตอบ",
             type="primary",
             use_container_width=True,
-            disabled=form_disabled,
+            disabled=disabled_all,
         )
 
-    # 6) เตรียม payload เมื่อกดส่งปกติ
+    # 4) เตรียม payload เมื่อกดส่ง
     if submitted_form and not ss["submitted"]:
-        ss["suppress_autorefresh"] = True  # กันการ reload แทรกขณะส่ง
-        if remaining_sec == 0:
-            ss["submit_error"] = "หมดเวลาแล้ว ไม่สามารถส่งคำตอบได้"
-            ss["suppress_autorefresh"] = False
-        elif not name.strip():
+        if not name.strip():
             ss["submit_error"] = "กรุณากรอกชื่อ"
-            ss["suppress_autorefresh"] = False
         else:
             ss["submit_error"] = None
             ss["pending_submit_payload"] = {
@@ -225,7 +120,7 @@ def page_exam():
                 "answers": ss["answers"],
             }
 
-    # 7) ส่งจริง
+    # 5) ส่งจริง → ล็อคทันที + spinner + rerun
     if ss["pending_submit_payload"] is not None:
         with st.spinner("กำลังส่งคำตอบ..."):
             try:
@@ -241,12 +136,11 @@ def page_exam():
             except Exception as e:
                 ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
                 ss["submitted"] = False
-                ss["suppress_autorefresh"] = False
             finally:
                 ss["pending_submit_payload"] = None
         st.rerun()
 
-    # 8) แสดงผลลัพธ์
+    # 6) แสดงผลลัพธ์/ข้อผิดพลาด
     if ss["submit_error"]:
         st.error(ss["submit_error"])
 
