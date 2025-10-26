@@ -517,4 +517,3 @@ if mode == "dashboard":
     page_dashboard()
 else:
     page_exam()
-```
