@@ -12,6 +12,21 @@ import json as _json
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
+from datetime import timedelta
+
+# ---------------- Timezone Helper ----------------
+def utc_to_ict(utc_iso_string: str) -> str:
+    """Converts a UTC ISO string to ICT (UTC+7) formatted string."""
+    try:
+        # 1. Parse UTC time (handle Z for +00:00)
+        dt_utc = datetime.fromisoformat(utc_iso_string.replace('Z', '+00:00'))
+        # 2. Add 7 hours for ICT
+        dt_ict = dt_utc + timedelta(hours=7)
+        # 3. Format as a readable string
+        return dt_ict.strftime("%Y-%m-%d %H:%M:%S ICT")
+    except Exception:
+        return utc_iso_string # Return original string on error
+
 # ---------------- Fonts (Thai) ----------------
 # พยายามใช้ TH Sarabun New ถ้ามีไฟล์ในโปรเจกต์ (เช่น thsarabunnew-webfont.ttf)
 try:
@@ -137,6 +152,8 @@ def page_exam():
     time_mode_raw = (exam.get("time_mode", "") or "").strip().lower()
     window_start  = exam.get("window_start_utc", "") or ""
     window_end    = exam.get("window_end_utc", "") or ""
+    ict_start = utc_to_ict(window_start)
+    ict_end = utc_to_ict(window_end)
 
     # ถ้ามี start และ end ให้ถือว่า "ล็อกเวลา" ไม่ว่าค่า time_mode จะเป็นอะไร
     has_window = bool(window_start and window_end)
@@ -144,11 +161,11 @@ def page_exam():
 
     if has_window and not ok_time:
         st.error(f"⏰ {msg_time}")
-        st.info(f"ช่วงเวลาสอบ (UTC): {window_start} → {window_end}")
+        st.info(f"ช่วงเวลาสอบ : {ict_start} → {ict_end}")
         # 🔒 ปิดฟอร์มทันที: ไม่ render ฟอร์มด้านล่าง
         return
     elif has_window:
-        st.caption(f"🕒 ช่วงเวลาสอบ (UTC): {window_start} → {window_end}")
+        st.caption(f"🕒 ช่วงเวลาสอบ : {ict_start} → {ict_end}")
 
     # 3) เหมือน baseline เดิมต่อไป (ฟอร์ม + ส่งคำตอบ)
     ss = st.session_state
