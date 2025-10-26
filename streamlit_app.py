@@ -61,10 +61,11 @@ def page_exam():
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
+    # --- Session state ---
     ss = st.session_state
-    ss.setdefault("submitted", False)
-    ss.setdefault("pending_submit_payload", None)
-    ss.setdefault("submit_result", None)
+    ss.setdefault("submitted", False)               # ล็อคถาวรหลังส่งสำเร็จ
+    ss.setdefault("pending_submit_payload", None)   # ใช้ล็อคทันทีเมื่อกำลังกดส่ง
+    ss.setdefault("submit_result", None)            # เก็บผลคะแนน
     ss.setdefault("submit_error", None)
     ss.setdefault("answers", [""] * qn)
 
@@ -72,51 +73,52 @@ def page_exam():
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
+    # ⚠️ ต้องประกาศก่อนเข้า form
     is_pending = ss["pending_submit_payload"] is not None
     disabled_all = ss["submitted"] or is_pending
+
+    # === ใช้ st.form เพื่อไม่ให้ rerun ระหว่างเลือก ===
     form_disabled = disabled_all
+    with st.form("exam_form", clear_on_submit=False):
+        name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
 
-  # === ใช้ st.form เพื่อไม่ให้ rerun ระหว่างเลือก ===
-with st.form("exam_form", clear_on_submit=False):
-    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
+        options = ["A", "B", "C", "D", "E"]
+        if len(ss["answers"]) != qn:
+            ss["answers"] = [""] * qn
 
-    options = ["A", "B", "C", "D", "E"]
-    if len(ss["answers"]) != qn:
-        ss["answers"] = [""] * qn
+        for i in range(qn):
+            current = ss["answers"][i]
+            choice = st.radio(
+                f"ข้อ {i+1}",
+                options=[""] + options,
+                index=([""] + options).index(current) if current in ([""] + options) else 0,
+                horizontal=True,
+                disabled=form_disabled,
+                key=f"q_{i+1}_radio_form",
+            )
+            ss["answers"][i] = choice
+            st.divider()
 
-    for i in range(qn):
-        current = ss["answers"][i]
-        choice = st.radio(
-            f"ข้อ {i+1}",
-            options=[""] + options,
-            index=([""] + options).index(current) if current in ([""] + options) else 0,
-            horizontal=True,
+        submitted_form = st.form_submit_button(
+            "ส่งคำตอบ",
+            type="primary",
+            use_container_width=True,
             disabled=form_disabled,
-            key=f"q_{i+1}_radio_form",
         )
-        ss["answers"][i] = choice
-        st.divider()
 
-    submitted_form = st.form_submit_button(
-        "ส่งคำตอบ",
-        type="primary",
-        use_container_width=True,
-        disabled=form_disabled,
-    )
+    # ======= หลังปิดฟอร์ม: เตรียมยิงจริงเมื่อกดส่ง =======
+    if submitted_form and not ss["submitted"]:
+        if not name.strip():
+            ss["submit_error"] = "กรุณากรอกชื่อ"
+        else:
+            ss["submit_error"] = None
+            ss["pending_submit_payload"] = {
+                "exam_id": exam_id,
+                "student_name": name.strip(),
+                "answers": ss["answers"],
+            }
 
-# ======= หลังปิดฟอร์ม =======
-if submitted_form and not ss["submitted"]:
-    if not name.strip():
-        ss["submit_error"] = "กรุณากรอกชื่อ"
-    else:
-        ss["submit_error"] = None
-        ss["pending_submit_payload"] = {
-            "exam_id": exam_id,
-            "student_name": name.strip(),
-            "answers": ss["answers"],
-        }
-
-    # ส่งจริงเมื่อ pending
+    # ======= ส่งจริง (ล็อคทันที + spinner + rerun) =======
     if ss["pending_submit_payload"] is not None:
         with st.spinner("กำลังส่งคำตอบ..."):
             try:
@@ -128,17 +130,16 @@ if submitted_form and not ss["submitted"]:
                 else:
                     err = js2.get("error") or "ส่งคำตอบไม่สำเร็จ"
                     ss["submit_error"] = err
-                    if err == "DUPLICATE_SUBMISSION":
-                        ss["submitted"] = True
-                    else:
-                        ss["submitted"] = False
+                    # ถ้าเป็นชื่อซ้ำในชุดนี้ → ล็อคถาวร
+                    ss["submitted"] = (err == "DUPLICATE_SUBMISSION")
             except Exception as e:
                 ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
                 ss["submitted"] = False
             finally:
                 ss["pending_submit_payload"] = None
-        st.rerun()
+        st.rerun()  # รีเฟรชเพื่อสะท้อนสถานะล็อคและผลคะแนน
 
+    # ======= แจ้งผล/ข้อผิดพลาด =======
     if ss["submit_error"]:
         st.error(ss["submit_error"])
 
