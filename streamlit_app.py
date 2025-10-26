@@ -396,7 +396,6 @@ def page_dashboard():
         id_to_title = {e["exam_id"]: e["title"] for e in exams}
         options = [e["exam_id"] for e in exams]
         current_idx = options.index(active_id) if active_id in options else 0
-        current_exam = next((e for e in exams if e["exam_id"] == chosen_id), {})
 
         new_idx = st.selectbox(
             "เลือกชุดข้อสอบที่จะใช้งาน (Active)",
@@ -404,11 +403,18 @@ def page_dashboard():
             index=current_idx,
             format_func=lambda i: f"{options[i]} — {id_to_title[options[i]]}",
         )
-        chosen_id = options[new_idx]
-
+        
+        # 📌 FIX: chosen_id ถูกกำหนดค่าไว้ที่นี่ก่อนนำไปใช้ในฟอร์ม
+        chosen_id = options[new_idx] 
+        
+        # ดึงข้อมูลชุดข้อสอบปัจจุบันเพื่อใช้ในการตั้งค่าเริ่มต้น
+        current_exam = next((e for e in exams if e["exam_id"] == chosen_id), {})
+        
+        # ------------------- ส่วนควบคุม Active Exam -------------------
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("บันทึกให้เป็น Active Exam", type="primary", use_container_width=True):
+                # ... โค้ดบันทึก Active Exam เดิม ...
                 try:
                     js = gas_post("set_active_exam", {"exam_id": chosen_id, "teacher_key": TEACHER_KEY})
                     if js.get("ok"):
