@@ -60,8 +60,8 @@ def page_exam():
         st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
         return
 
-    qn = int(exam.get("question_count", 0))
     exam_id = exam.get("exam_id", "")
+    qn = int(exam.get("question_count", 0))
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
     # --- Session state ---
