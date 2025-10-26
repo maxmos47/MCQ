@@ -1,3 +1,4 @@
+# streamlit_app.py
 import json
 import requests
 import pandas as pd
@@ -5,22 +6,36 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import textwrap
-import os, urllib.request
-import time
-import streamlit.components.v1 as components
-from streamlit_autorefresh import st_autorefresh
+import os
+import urllib.request
 
-plt.rcParams['font.family'] = 'tahoma'
-mpl.font_manager.fontManager.addfont('thsarabunnew-webfont.ttf')
-mpl.rc('font', family='TH Sarabun New', size=20)
+# ---------------- Fonts (Thai) ----------------
+# พยายามใช้ TH Sarabun New ถ้ามีไฟล์ในโปรเจกต์ (เช่น thsarabunnew-webfont.ttf)
+try:
+    if os.path.exists("thsarabunnew-webfont.ttf"):
+        mpl.font_manager.fontManager.addfont("thsarabunnew-webfont.ttf")
+        mpl.rc("font", family="TH Sarabun New", size=20)
+    else:
+        # fallback ที่อ่านไทยได้ดีพอควรบนหลายระบบ
+        plt.rcParams["font.family"] = "Tahoma"
+        mpl.rc("font", family="DejaVu Sans", size=12)
+except Exception:
+    plt.rcParams["font.family"] = "DejaVu Sans"
 
+plt.rcParams["axes.unicode_minus"] = False
+
+# ---------------- Page Config ----------------
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
+# ---------------- Secrets / Config ----------------
 GAS_WEBAPP_URL = st.secrets.get("gas", {}).get("webapp_url", "").strip()
-TEACHER_KEY = st.secrets.get("app", {}).get("teacher_key", "").strip()
-TIMEOUT = 25
+TEACHER_KEY   = st.secrets.get("app", {}).get("teacher_key", "").strip()
+TIMEOUT       = 25
 
+# ---------------- GAS Helpers ----------------
 def gas_get(action: str, params: dict | None = None):
+    if not GAS_WEBAPP_URL:
+        raise RuntimeError("GAS_WEBAPP_URL is not set.")
     url = f"{GAS_WEBAPP_URL}?action={action}"
     if params:
         for k, v in params.items():
@@ -30,12 +45,14 @@ def gas_get(action: str, params: dict | None = None):
     return r.json()
 
 def gas_post(action: str, payload: dict):
+    if not GAS_WEBAPP_URL:
+        raise RuntimeError("GAS_WEBAPP_URL is not set.")
     url = f"{GAS_WEBAPP_URL}?action={action}"
     r = requests.post(url, json=payload, timeout=30)
     r.raise_for_status()
     return r.json()
 
-# Routing
+# ---------------- Routing (via ?mode=...) ----------------
 raw_mode = st.query_params.get("mode", "exam")
 if isinstance(raw_mode, list) and raw_mode:
     raw_mode = raw_mode[0]
@@ -64,7 +81,7 @@ def page_exam():
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    # 2) Session state (เรียบง่าย ไม่มีตัวจับเวลาอีกต่อไป)
+    # 2) Session state (เรียบง่าย ไม่มีตัวจับเวลา)
     ss = st.session_state
     ss.setdefault("submitted", False)                # ล็อคถาวรหลังส่งสำเร็จ
     ss.setdefault("pending_submit_payload", None)    # ใช้ล็อคตอนกำลังส่ง
@@ -76,7 +93,7 @@ def page_exam():
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
-    # 3) สร้างฟอร์ม (ไม่ rerun ระหว่างเปลี่ยน radio)
+    # 3) ฟอร์ม (ไม่ rerun ระหว่างเปลี่ยน radio)
     is_pending = ss["pending_submit_payload"] is not None
     disabled_all = ss["submitted"] or is_pending
 
@@ -159,12 +176,15 @@ def page_dashboard():
     if not TEACHER_KEY:
         st.error("ยังไม่ได้ตั้งค่ารหัสผ่านอาจารย์ใน Secrets (app.teacher_key)")
         return
+
     key_in = st.text_input("รหัสผ่านอาจารย์", type="password")
     if st.button("เข้าสู่ระบบ", use_container_width=True) or key_in:
         if key_in != TEACHER_KEY:
             st.error("รหัสผ่านไม่ถูกต้อง")
             return
         st.success("เข้าสู่ระบบแล้ว ✅")
+
+        # โหลด Config/Exams
         try:
             cfg = gas_get("get_config")
             if not cfg.get("ok"):
@@ -175,13 +195,16 @@ def page_dashboard():
         except Exception as e:
             st.error(f"โหลดข้อมูลล้มเหลว: {e}")
             return
+
         if not exams:
             st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
             return
 
+        # เลือกชุดข้อสอบ Active
         id_to_title = {e["exam_id"]: e["title"] for e in exams}
         options = [e["exam_id"] for e in exams]
         current_idx = options.index(active_id) if active_id in options else 0
+
         new_idx = st.selectbox(
             "เลือกชุดข้อสอบที่จะใช้งาน (Active)",
             options=list(range(len(options))),
@@ -236,8 +259,10 @@ def page_dashboard():
             # === กราฟคะแนนอ่านง่าย (แนวนอน) ===
             plot_df = df[["student_name", "percent"]].copy()
             plot_df["student_name"] = plot_df["student_name"].astype(str).str.strip()
+
             def wrap_label(s, width=10):
                 return "\n".join(textwrap.wrap(s, width=width))
+
             plot_df["label"] = plot_df["student_name"].apply(lambda s: wrap_label(s, width=10))
             plot_df = plot_df.sort_values("percent", ascending=True)
 
@@ -253,19 +278,19 @@ def page_dashboard():
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
 
-            # === Item Analysis ===
+            # === Item Analysis (เปอร์เซ็นต์ตอบถูกรายข้อ) ===
             first_detail = df.iloc[0]["detail"] if "detail" in df.columns else None
-            qn = len(first_detail) if first_detail else 0
-            if qn > 0:
-                counts = [0] * qn
+            qn_items = len(first_detail) if first_detail else 0
+            if qn_items > 0:
+                counts = [0] * qn_items
                 total = len(df)
                 for _, row in df.iterrows():
                     ans = [s.strip().upper() for s in str(row.get("answers", "")).split(",")]
-                    for i in range(qn):
+                    for i in range(qn_items):
                         if i < len(ans) and first_detail and ans[i] == first_detail[i]["correct"]:
                             counts[i] += 1
                 perc = [round((c * 100) / total) if total > 0 else 0 for c in counts]
-                item_df = pd.DataFrame({"ข้อ": [i + 1 for i in range(qn)], "%ถูก": perc})
+                item_df = pd.DataFrame({"ข้อ": [i + 1 for i in range(qn_items)], "%ถูก": perc})
                 st.subheader("Item Analysis")
                 st.dataframe(item_df, hide_index=True, use_container_width=True)
 
@@ -284,7 +309,7 @@ def page_dashboard():
         except Exception as e:
             st.error(f"โหลดข้อมูลล้มเหลว: {e}")
 
-# Routing
+# ---------------- Run ----------------
 if mode == "dashboard":
     page_dashboard()
 else:
