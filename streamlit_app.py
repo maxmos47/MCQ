@@ -11,7 +11,6 @@ import urllib.request
 import json as _json
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
-
 from datetime import timedelta
 
 # ---------------- Custom CSS for Mobile UI/Card Style ----------------
@@ -95,17 +94,13 @@ def utc_to_ict(utc_iso_string: str) -> str:
 # ---------------- Timezone Helper 2 ----------------
 def ict_to_utc_iso(date_obj, time_obj) -> str:
     """Converts a combined date/time object (ICT/UTC+7) to UTC ISO string."""
-    # ... โค้ดเดิม ...
+    from datetime import datetime, timedelta
     try:
-        # 1. Combine date and time objects (assumed to be in ICT/UTC+7)
-        # ตรวจสอบว่า date_obj และ time_obj เป็นค่าที่ถูกต้องหรือไม่
-        if not date_obj or not time_obj:
-            return "" # ถ้าค่าใดค่าหนึ่งเป็น None/False ให้คืนค่าว่าง
+        if date_obj is None or time_obj is None:
+            return "" # คืนค่าว่าง (Empty String) เมื่อต้องการล้างเวลา
             
         dt_ict = datetime.combine(date_obj, time_obj)
-        # 2. Subtract 7 hours to get to UTC
         dt_utc = dt_ict - timedelta(hours=7)
-        # 3. Format as ISO 8601 UTC string (ending with Z)
         return dt_utc.isoformat(timespec='milliseconds') + 'Z'
     except Exception:
         return "" # Return empty string on error
