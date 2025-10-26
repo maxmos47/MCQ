@@ -223,9 +223,40 @@ def page_dashboard():
             worst = int(df["percent"].astype(float).min())
             st.write(f"ค่าเฉลี่ย: {avg:.1f}% | สูงสุด: {best}% | ต่ำสุด: {worst}%")
 
-            import matplotlib.pyplot as plt
             fig = plt.figure()
-            plt.bar(df["student_name"], df["percent"])
+# ===== กราฟคะแนนอ่านง่าย (Horizontal bar) =====
+            import matplotlib.pyplot as plt
+            import textwrap
+
+            plot_df = df[['student_name', 'percent']].copy()
+            plot_df['student_name'] = plot_df['student_name'].astype(str).str.strip()
+
+# (เลือก) ตัดบรรทัดชื่อให้ไม่ยาวเกินไป
+            def wrap_label(s, width=10):
+            return '\n'.join(textwrap.wrap(s, width=width))
+
+            plot_df['label'] = plot_df['student_name'].apply(lambda s: wrap_label(s, width=10))
+
+# เรียงจากน้อยไปมากเพื่อให้แท่งยาวอยู่ด้านบนตอนใช้ barh
+            plot_df = plot_df.sort_values('percent', ascending=True)
+
+            fig, ax = plt.subplots(figsize=(10, max(3, 0.6 * len(plot_df))))
+            ax.barh(plot_df['label'], plot_df['percent'])
+            ax.set_xlim(0, 100)
+
+            ax.set_xlabel('Percent', fontsize=12)
+            ax.set_ylabel('นักเรียน', fontsize=12)
+            ax.set_title(f'คะแนน (%) ต่อคน • {exam_id}', fontsize=14, pad=12)
+
+# ฟอนต์ของ tick ใหญ่ขึ้น
+            ax.tick_params(axis='both', labelsize=12)
+
+# ใส่ตัวเลขท้ายแท่งเพื่ออ่านง่าย
+            for i, v in enumerate(plot_df['percent'].to_list()):
+                ax.text(v + 1, i, f'{int(v)}%', va='center', fontsize=11)
+
+            plt.tight_layout()
+            st.pyplot(fig, use_container_width=True)
             plt.xticks(rotation=45, ha="right")
             plt.ylabel("Percent")
             plt.title(f"คะแนน (%) ต่อคน • {chosen_id}")
