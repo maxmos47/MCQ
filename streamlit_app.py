@@ -35,7 +35,7 @@ def page_exam():
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
 
-    # 1) โหลดชุดข้อสอบที่กำลังใช้งาน
+    # --- โหลดชุดข้อสอบที่กำลังใช้งาน ---
     try:
         js = gas_get("get_active_exam")
         if not js.get("ok"):
@@ -51,22 +51,26 @@ def page_exam():
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    # 2) จัดการ state ให้ครบ
+    # --- จัดการ state ---
     ss = st.session_state
-    ss.setdefault("submitted", False)                 # ล็อคถาวรหลังส่งสำเร็จ
-    ss.setdefault("pending_submit_payload", None)     # payload รอส่ง
-    ss.setdefault("submit_error", None)               # เก็บ error ล่าสุด (ถ้ามี)
-    ss.setdefault("submit_result", None)              # เก็บผลคะแนน (ใช้โชว์หลังส่ง)
+    ss.setdefault("submitted", False)                  # ล็อคถาวรหลังส่งสำเร็จ
+    ss.setdefault("pending_submit_payload", None)      # ใช้ล็อคทันทีเมื่อกดปุ่ม (กำลังส่ง)
+    ss.setdefault("submit_result", None)               # เก็บผลคะแนน (หากส่งสำเร็จ)
+    ss.setdefault("submit_error", None)
     ss.setdefault("answers", [""] * qn)
 
-    # จะปิดอินพุต/ปุ่ม ถ้าส่งแล้วหรือกำลังส่ง
+    # **บังคับล็อคถ้าพบว่ามีผลคะแนนแล้ว** (กันเคสที่ปุ่มยังไม่เทา)
+    if ss["submit_result"] is not None:
+        ss["submitted"] = True
+
+    # จะปิดอินพุต/ปุ่ม ถ้าส่งแล้ว หรือกำลังส่งอยู่
     is_pending = ss["pending_submit_payload"] is not None
     disabled_all = ss["submitted"] or is_pending
 
-    # 3) อินพุตชื่อ
+    # --- ชื่อผู้สอบ ---
     name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=disabled_all)
 
-    # 4) Radio ต่อข้อ (single-choice)
+    # --- คำตอบด้วย radio (single choice) ---
     options = ["A", "B", "C", "D", "E"]
     if len(ss["answers"]) != qn:
         ss["answers"] = [""] * qn
@@ -82,57 +86,56 @@ def page_exam():
         )
         st.divider()
 
-    # 5) ปุ่มส่ง — กดแล้ว "ล็อคทันที" โดยไม่รอ API
+    # --- กดแล้ว "ล็อคทันที" ไม่รอ API ---
     def _arm_submit():
         if not name.strip():
-            # กันเคสไม่กรอกชื่อ: ไม่ตั้ง pending, ให้ผู้ใช้กรอกก่อน
             ss["submit_error"] = "กรุณากรอกชื่อ"
             return
-        # ล็อค UI โดยเซ็ต payload ไว้ก่อน (ถือว่า 'กำลังส่ง')
         ss["submit_error"] = None
-        ss["submit_result"] = None
         ss["pending_submit_payload"] = {
             "exam_id": exam_id,
             "student_name": name.strip(),
             "answers": ss["answers"],
         }
-        # เคล็ดลับ: ล็อคทุกอย่างทันทีตั้งแต่ตอนนี้
-        # (disabled_all ด้านบนจะเป็น True เพราะ pending_submit_payload ไม่ใช่ None)
+        # แค่ตั้งค่านี้ ปุ่ม/อินพุตจะปิดทันทีเพราะ disabled_all = True
 
-    st.button(
-        "ส่งคำตอบ",
-        type="primary",
-        use_container_width=True,
-        disabled=disabled_all,
-        on_click=_arm_submit,
-    )
+    # แสดงปุ่มเฉพาะเมื่อยังไม่ล็อค
+    if not ss["submitted"]:
+        st.button(
+            "ส่งคำตอบ",
+            type="primary",
+            use_container_width=True,
+            disabled=disabled_all,   # กำลังส่งอยู่ก็ปิด
+            on_click=_arm_submit,
+        )
+    else:
+        # ล็อคถาวรแล้ว: แสดงปุ่มเทาเป็นตัวบอกสถานะ (จะไม่กดได้)
+        st.button("ส่งคำตอบ (ล็อคแล้ว)", use_container_width=True, disabled=True)
 
-    # 6) ถ้ามี payload ค้าง → ทำการส่งจริง พร้อม spinner และอัปเดตผล
+    # --- ส่งจริงเมื่อ pending ---
     if ss["pending_submit_payload"] is not None:
         with st.spinner("กำลังส่งคำตอบ..."):
             try:
                 js2 = gas_post("submit", ss["pending_submit_payload"])
                 if js2.get("ok"):
-                    ss["submitted"] = True             # ล็อคถาวร
                     ss["submit_result"] = js2["data"]
+                    ss["submitted"] = True        # ล็อคถาวร
                     ss["submit_error"] = None
                 else:
-                    # ล้มเหลว → แจ้งเตือนและ "ปลดล็อค" ให้กรอกใหม่ ยกเว้น DUPLICATE
-                    err = js2.get("error")
-                    ss["submit_error"] = err or "ส่งคำตอบไม่สำเร็จ"
+                    err = js2.get("error") or "ส่งคำตอบไม่สำเร็จ"
+                    ss["submit_error"] = err
                     if err == "DUPLICATE_SUBMISSION":
-                        ss["submitted"] = True         # ชื่อนี้เคยส่งแล้ว → ล็อคถาวร
+                        ss["submitted"] = True    # ชื่อนี้ส่งแล้ว → ล็อคถาวร
                     else:
-                        ss["submitted"] = False        # ส่งไม่สำเร็จ → ปลดล็อคให้แก้ไข
+                        ss["submitted"] = False   # ส่งไม่สำเร็จ → ปลดล็อคลองใหม่
             except Exception as e:
-                # เกิด Exception ระหว่างส่ง → ให้ปลดล็อคเพื่อส่งใหม่
                 ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
                 ss["submitted"] = False
             finally:
-                ss["pending_submit_payload"] = None    # เคลียร์สถานะ 'กำลังส่ง'
-        st.rerun()  # รีเฟรชเพื่อสะท้อนสถานะใหม่ (ปุ่ม/อินพุตจะเป็นไปตาม submitted)
+                ss["pending_submit_payload"] = None
+        st.rerun()  # รีเฟรชทันที เพื่อให้ปุ่ม/อินพุตกลายเป็นเทาในรอบถัดไป
 
-    # 7) แสดงผลลัพธ์/ข้อผิดพลาด (หลัง rerun จะมาขึ้นตรงนี้)
+    # --- แสดงผลลัพธ์/แจ้งเตือน ---
     if ss["submit_error"]:
         st.error(ss["submit_error"])
 
