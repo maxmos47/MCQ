@@ -433,19 +433,6 @@ def page_dashboard():
                     plt.tight_layout()
                     st.pyplot(fig1, use_container_width=True)
 
-                    # กราฟซ้อน ถูก/ผิด ต่อข้อ
-                    plot2 = item_df.copy()
-                    fig2, ax2 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot2))))
-                    y = plot2["ข้อ"].astype(str)
-                    ax2.barh(y, plot2["ผิด(คน)"], label="Wrong")
-                    ax2.barh(y, plot2["ถูก(คน)"], left=plot2["ผิด(คน)"], label="Correct")
-                    ax2.set_xlabel("จำนวนนักเรียน", fontsize=12)
-                    ax2.set_ylabel("ข้อ", fontsize=12)
-                    ax2.set_title("จำนวนถูก/ผิด ต่อข้อ (Stacked)", fontsize=14, pad=12)
-                    ax2.legend(loc="lower right")
-                    plt.tight_layout()
-                    st.pyplot(fig2, use_container_width=True)
-
                     # สรุปข้อยากที่สุด
                     hardest = plot1.iloc[0]
                     st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: ข้อ {hardest['ข้อ']} (ถูก {hardest['%ถูก']}%)")
