@@ -74,9 +74,9 @@ def page_exam():
 
     is_pending = ss["pending_submit_payload"] is not None
     disabled_all = ss["submitted"] or is_pending
+    form_disabled = disabled_all
 
   # === ใช้ st.form เพื่อไม่ให้ rerun ระหว่างเลือก ===
-form_disabled = disabled_all
 with st.form("exam_form", clear_on_submit=False):
     name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
 
