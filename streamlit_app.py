@@ -400,13 +400,14 @@ def page_dashboard():
                 ax2.legend(loc="lower right")
                 plt.tight_layout()
                 st.pyplot(fig2, use_container_width=True)
+                    
+          except Exception as e:
+                st.error(f"โหลดข้อมูลล้มเหลว: {e}")
+
 
                 # 6) ช่วยสรุป: ข้อที่ผิดเยอะที่สุด
                 hardest = plot1.iloc[0]
                 st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: ข้อ {hardest['ข้อ']} (ถูก {hardest['%ถูก']}%)")
-
-           except Exception as e:
-                st.error(f"โหลดข้อมูลล้มเหลว: {e}")
 
 # ---------------- Run ----------------
 if mode == "dashboard":
