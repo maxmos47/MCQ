@@ -9,6 +9,8 @@ import textwrap
 import os, urllib.request
 
 plt.rcParams['font.family'] = Tahoma
+mpl.font_manager.fontManager.addfont('thsarabunnew-webfont.ttf')
+mpl.rc('font', family='TH Sarabun New', size=20)
 
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
