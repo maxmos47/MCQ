@@ -14,16 +14,64 @@ from datetime import datetime, timezone
 
 from datetime import timedelta
 
+def load_css():
+    st.markdown("""
+        <style>
+        /* 1. Mobile-friendly: Reduce padding around main content */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            padding-left: 1rem !important; /* Force minimal padding on sides */
+            padding-right: 1rem !important; /* Force minimal padding on sides */
+        }
+        
+        /* 2. Style for Question Card */
+        .stQuestionCard {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px; /* Soften the corners */
+            padding: 15px;
+            margin-bottom: 12px; /* Space between cards */
+            box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.05); /* Soft shadow */
+            background-color: #ffffff; /* White background */
+        }
+
+        /* 3. Reduce vertical space (st.divider) in form */
+        div[data-testid="stDivider"] {
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+        
+        /* 4. Make radio buttons more visually distinct */
+        div[data-testid*="stRadio"] label {
+            padding: 5px 10px;
+            border-radius: 8px;
+            margin: 2px;
+            transition: background-color 0.1s;
+        }
+        /* Highlight selected option */
+        div[data-testid*="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+            background-color: #e6f7ff; /* Light blue background for selected */
+            border-left: 3px solid var(--primary-color); /* Primary color stripe */
+        }
+        
+        /* 5. Reduce font size for st.metric values (specifically the time string) */
+        div[data-testid="stMetricValue"] {
+            font-size: 1.2rem; /* ปรับลดขนาดตัวอักษรลงเล็กน้อย */
+            line-height: 1.4;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
 # ---------------- Timezone Helper ----------------
 def utc_to_ict(utc_iso_string: str) -> str:
     """Converts a UTC ISO string to ICT (UTC+7) formatted string."""
     try:
-        # 1. Parse UTC time (handle Z for +00:00)
+        # 1. Parse UTC time
         dt_utc = datetime.fromisoformat(utc_iso_string.replace('Z', '+00:00'))
         # 2. Add 7 hours for ICT
         dt_ict = dt_utc + timedelta(hours=7)
-        # 3. Format as a readable string
-        return dt_ict.strftime("%Y-%m-%d %H:%M:%S ICT")
+        # 3. Format as a readable string (ตัดวินาทีออกและใส่ ICT)
+        return dt_ict.strftime("%Y-%m-%d %H:%M น. ICT") # 2025-10-27 00:30 น. ICT
     except Exception:
         return utc_iso_string # Return original string on error
 
@@ -358,18 +406,20 @@ def page_dashboard():
                 df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
                 df = df.sort_values("timestamp", ascending=True)
 
-            st.subheader("สรุปผลรายคน")
-            show = df[["timestamp", "student_name", "score", "percent", "answers"]].copy()
-            show.columns = ["เวลา", "ชื่อ", "คะแนน", "เปอร์เซ็นต์", "คำตอบ"]
-            st.dataframe(show, hide_index=True, use_container_width=True)
-
+            # ใช้ Expander เพื่อจัดระเบียบตารางผล
+            with st.expander("📊 สรุปผลรายคน (คลิกเพื่อดูรายละเอียด)", expanded=False):
+                show = df[["timestamp", "student_name", "score", "percent", "answers"]].copy()
+                show.columns = ["เวลา", "ชื่อ", "คะแนน", "เปอร์เซ็นต์", "คำตอบ"]
+                st.dataframe(show, hide_index=True, use_container_width=True)
+            
             st.subheader("สถิติคะแนนรวม")
             avg = float(df["percent"].astype(float).mean())
             best = int(df["percent"].astype(float).max())
             worst = int(df["percent"].astype(float).min())
-            st.write(f"ค่าเฉลี่ย: {avg:.1f}% | สูงสุด: {best}% | ต่ำสุด: {worst}%")
+            st.write(f"**ค่าเฉลี่ย:** {avg:.1f}% | **สูงสุด:** {best}% | **ต่ำสุด:** {worst}%")
 
-            # === กราฟคะแนนอ่านง่าย (แนวนอน) ===
+            # === กราฟคะแนนอ่านง่าย (แนวนอน) - ปรับปรุง UI ===
+            
             plot_df = df[["student_name", "percent"]].copy()
             plot_df["student_name"] = plot_df["student_name"].astype(str).str.strip()
 
@@ -379,36 +429,42 @@ def page_dashboard():
             plot_df["label"] = plot_df["student_name"].apply(lambda s: wrap_label(s, width=10))
             plot_df = plot_df.sort_values("percent", ascending=True)
 
-            fig, ax = plt.subplots(figsize=(10, max(3, 0.6 * len(plot_df))))
-            ax.barh(plot_df["label"], plot_df["percent"])
-            ax.set_xlim(0, 100)
-            ax.set_xlabel("Percent", fontsize=12)
-            ax.set_ylabel("นักเรียน", fontsize=12)
-            ax.set_title(f"คะแนน (%) ต่อคน • {chosen_id}", fontsize=14, pad=12)
-            ax.tick_params(axis="both", labelsize=12)
-            for i, v in enumerate(plot_df["percent"].to_list()):
-                ax.text(v + 1, i, f"{int(v)}%", va="center", fontsize=11)
-            plt.tight_layout()
-            st.pyplot(fig, use_container_width=True)
+            with st.container(border=True):
+                st.markdown("##### กราฟเปรียบเทียบคะแนนรายบุคคล")
+                fig, ax = plt.subplots(figsize=(10, max(3, 0.6 * len(plot_df))))
+                
+                # --- UI Style Enhancement ---
+                ax.barh(plot_df["label"], plot_df["percent"], color='#4c96d7', height=0.7) # Custom color (Blue)
+                ax.set_xlim(0, 100)
+                ax.set_xlabel("เปอร์เซ็นต์", fontsize=12)
+                ax.set_ylabel("นักเรียน", fontsize=12)
+                ax.set_title(f"คะแนน (%) ต่อคน • {chosen_id}", fontsize=14, pad=12)
+                ax.tick_params(axis="both", labelsize=12)
+                ax.grid(axis='x', linestyle='--', alpha=0.6) # เพิ่ม Grid แกน X
+                ax.spines['right'].set_visible(False) # ซ่อนเส้นขอบขวา
+                ax.spines['top'].set_visible(False) # ซ่อนเส้นขอบบน
+                # --- End UI Style Enhancement ---
+                
+                for i, v in enumerate(plot_df["percent"].to_list()):
+                    ax.text(v + 1, i, f"{int(v)}%", va="center", fontsize=11, color='#4c96d7')
+                plt.tight_layout()
+                st.pyplot(fig, use_container_width=True)
 
-            # ======================= Item Analysis (รวมเข้ากับโค้ดเดิม) =======================
+            # ======================= Item Analysis =======================
+            # ... โค้ดคำนวณ Item Analysis เดิม ...
             from collections import Counter
             import json as _json
 
-            # --- 1) แปลงคำตอบนักเรียนเป็น list[list[str]] ---
             answers_lists = []
             if "answers" in df.columns:
                 for s in df["answers"].astype(str).fillna(""):
-                    # split + ทำความสะอาด + ตัดค่าว่าง
                     arr = [a.strip().upper() for a in s.split(",")]
-                    arr = [a for a in arr if a]  # ตัดค่าว่าง
+                    arr = [a for a in arr if a]
                     answers_lists.append(arr)
             else:
                 answers_lists = []
 
             total = len(answers_lists)
-
-            # --- 2) ลองดึง detail เพื่อดูจำนวนข้อจากเฉลยรายข้อ ---
             first_detail = None
             if "detail" in df.columns:
                 for v in df["detail"]:
@@ -421,13 +477,10 @@ def page_dashboard():
                         pass
             qn_detail = len(first_detail) if isinstance(first_detail, list) else 0
 
-            # --- 3) ลองดึง answer_key ของชุดนี้ (ถ้ามี) ---
             answer_key = None
-            # ถ้ามี detail → ดึงเฉลยจาก detail
             if isinstance(first_detail, list):
                 answer_key = [str(x.get("correct","")).strip().upper() if isinstance(x, dict) else "" for x in first_detail]
 
-            # ถ้ายังไม่มี → ลอง get_active_exam (ใช้เฉพาะเมื่อ exam_id ตรง)
             if answer_key is None:
                 try:
                     ex = gas_get("get_active_exam")
@@ -438,23 +491,19 @@ def page_dashboard():
                     pass
             key_len = len(answer_key) if isinstance(answer_key, list) else 0
 
-            # --- 4) เอาจำนวนข้อจาก "คำตอบจริง" ของนักเรียนแบบเสียงข้างมาก ---
             lens = [len(a) for a in answers_lists]
             maj_len = Counter(lens).most_common(1)[0][0] if lens else 0
 
-            # --- 5) สรุปจำนวนข้อที่เชื่อถือได้ที่สุด ---
             candidates = [x for x in [maj_len, qn_detail, key_len] if x and x > 0]
             qn = min(candidates) if candidates else 0
 
             if qn == 0 or total == 0:
                 st.info("ยังไม่มีคำตอบ/จำนวนข้อเพียงพอสำหรับการวิเคราะห์รายข้อ")
             else:
-                # --- 6) บังคับให้ทุกอย่างยาวเท่า qn (truncate) ---
                 answers_lists = [arr[:qn] for arr in answers_lists]
                 if isinstance(answer_key, list):
                     answer_key = answer_key[:qn]
 
-                # 7) แจกแจงการเลือกตัวเลือกต่อข้อ (fallback ทำงานได้เสมอ)
                 option_counts = [Counter() for _ in range(qn)]
                 valid_opts = ["A", "B", "C", "D", "E"]
                 for arr in answers_lists:
@@ -463,7 +512,6 @@ def page_dashboard():
                         opt = opt if opt in valid_opts else "(blank)"
                         option_counts[i][opt] += 1
 
-                # 8) ถ้ามีเฉลย → คำนวณถูก/ผิดต่อข้อ
                 if isinstance(answer_key, list) and any(answer_key):
                     correct_counts = [0] * qn
                     for arr in answers_lists:
@@ -477,30 +525,38 @@ def page_dashboard():
 
                     item_df = pd.DataFrame({
                         "ข้อ": [i + 1 for i in range(qn)],
+                        "เฉลย": answer_key,
                         "ถูก(คน)": correct_counts,
                         "ผิด(คน)": wrong_counts,
                         "%ถูก": perc_correct,
                     })
 
-                    st.subheader("📌 Item Analysis — สรุปการตอบถูกรายข้อ")
-                    st.dataframe(item_df, hide_index=True, use_container_width=True)
+                    # ใช้ Expander เพื่อจัดระเบียบ Item Analysis
+                    with st.expander("✅ Item Analysis — สรุปการตอบถูกรายข้อ", expanded=True):
+                        st.dataframe(item_df, hide_index=True, use_container_width=True)
 
-                    # กราฟ % ถูก (เรียงจากยาก→ง่าย)
-                    plot1 = item_df.sort_values("%ถูก", ascending=True)
-                    fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot1))))
-                    ax1.barh(plot1["ข้อ"].astype(str), plot1["%ถูก"])
-                    ax1.set_xlabel("% ถูก", fontsize=14)
-                    ax1.set_ylabel("ข้อ", fontsize=14)
-                    ax1.set_xlim(0, 100)
-                    ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยากไปง่าย)", fontsize=14, pad=12)
-                    for i, v in enumerate(plot1["%ถูก"].tolist()):
-                        ax1.text(v + 1, i, f"{v}%", va="center", fontsize=12)
-                    plt.tight_layout()
-                    st.pyplot(fig1, use_container_width=True)
+                        # กราฟ % ถูก (เรียงจากยาก→ง่าย)
+                        plot1 = item_df.sort_values("%ถูก", ascending=True)
+                        fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot1))))
+                        
+                        # --- UI Style Enhancement ---
+                        ax1.barh(plot1["ข้อ"].astype(str), plot1["%ถูก"], color='#28a745', height=0.7) # Custom color (Green)
+                        ax1.set_xlabel("% ถูก", fontsize=14)
+                        ax1.set_ylabel("ข้อ", fontsize=14)
+                        ax1.set_xlim(0, 100)
+                        ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยากไปง่าย)", fontsize=14, pad=12)
+                        ax1.grid(axis='x', linestyle='--', alpha=0.6)
+                        ax1.spines['right'].set_visible(False)
+                        ax1.spines['top'].set_visible(False)
+                        # --- End UI Style Enhancement ---
+                        
+                        for i, v in enumerate(plot1["%ถูก"].tolist()):
+                            ax1.text(v + 1, i, f"{v}%", va="center", fontsize=12, color='#28a745')
+                        plt.tight_layout()
+                        st.pyplot(fig1, use_container_width=True)
 
-                    # สรุปข้อยากที่สุด
-                    hardest = plot1.iloc[0]
-                    st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: ข้อ {hardest['ข้อ']} (ถูก {hardest['%ถูก']}%)")
+                        hardest = plot1.iloc[0]
+                        st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: **ข้อ {hardest['ข้อ']}** (ถูก {hardest['%ถูก']}%)")
                 else:
                     # 9) ไม่มีเฉลย → แสดงกราฟ distribution ต่อข้อ (A–E/เว้นว่าง)
                     st.subheader("📌 Item Analysis — แจกแจงตัวเลือกต่อข้อ (ยังไม่ทราบเฉลย)")
@@ -512,26 +568,37 @@ def page_dashboard():
                             row[o] = cnt.get(o, 0)
                         dist_df.append(row)
                     dist_df = pd.DataFrame(dist_df)
-                    st.dataframe(dist_df, hide_index=True, use_container_width=True)
 
-                    # กราฟ stacked distribution
-                    figd, axd = plt.subplots(figsize=(10, max(3.5, 0.55 * len(dist_df))))
-                    y = dist_df["ข้อ"].astype(str)
-                    left = [0] * len(dist_df)
-                    for o in all_opts:
-                        vals = dist_df[o].tolist()
-                        axd.barh(y, vals, left=left, label=o)
-                        left = [l + v for l, v in zip(left, vals)]
-                    axd.set_xlabel("จำนวนนักเรียน", fontsize=12)
-                    axd.set_ylabel("ข้อ", fontsize=12)
-                    axd.set_title("Distribution ตัวเลือกต่อข้อ (A–E/เว้นว่าง)", fontsize=14, pad=12)
-                    axd.legend(loc="lower right", ncol=3)
-                    plt.tight_layout()
-                    st.pyplot(figd, use_container_width=True)
+                    with st.expander("📊 แจกแจงตัวเลือกต่อข้อ (คลิกเพื่อดู)", expanded=True):
+                        st.dataframe(dist_df, hide_index=True, use_container_width=True)
 
-                    st.info("ℹ️ ต้องมีเฉลย (answer_key) จึงจะคำนวณถูก/ผิดต่อข้อได้ — "
-                            "ทำได้โดยตั้งชุดนี้ให้เป็น Active (เพื่อดึงจาก get_active_exam) "
-                            "หรือเพิ่ม endpoint ฝั่ง GAS ที่คืน answer_key ของชุดที่เลือก")
+                        # กราฟ stacked distribution
+                        figd, axd = plt.subplots(figsize=(10, max(3.5, 0.55 * len(dist_df))))
+                        y = dist_df["ข้อ"].astype(str)
+                        left = [0] * len(dist_df)
+                        
+                        # --- UI Style Enhancement: ใช้ชุดสีที่แตกต่างกัน ---
+                        colors = ['#FF9999', '#99CCFF', '#99FF99', '#FFFF99', '#CC99FF', '#DDDDDD'] # Pastel/Soft colors
+                        color_map = {opt: colors[i % len(colors)] for i, opt in enumerate(all_opts)}
+                        
+                        for i, o in enumerate(all_opts):
+                            vals = dist_df[o].tolist()
+                            axd.barh(y, vals, left=left, label=o, color=color_map[o], edgecolor='grey')
+                            left = [l + v for l, v in zip(left, vals)]
+                        
+                        axd.set_xlabel("จำนวนนักเรียน", fontsize=12)
+                        axd.set_ylabel("ข้อ", fontsize=12)
+                        axd.set_title("Distribution ตัวเลือกต่อข้อ (A–E/เว้นว่าง)", fontsize=14, pad=12)
+                        axd.legend(loc="lower right", ncol=3, frameon=True)
+                        axd.grid(axis='x', linestyle='--', alpha=0.6)
+                        axd.spines['right'].set_visible(False)
+                        axd.spines['top'].set_visible(False)
+                        # --- End UI Style Enhancement ---
+                        
+                        plt.tight_layout()
+                        st.pyplot(figd, use_container_width=True)
+
+                        st.info("ℹ️ ต้องมีเฉลย (answer_key) จึงจะคำนวณถูก/ผิดต่อข้อได้")
         except Exception as e:
             st.error(f"โหลดข้อมูลล้มเหลว: {e}")
 
