@@ -326,17 +326,66 @@ def page_dashboard():
 
             # === Item Analysis (เปอร์เซ็นต์ตอบถูกรายข้อ) ===
 
-            # 0) เตรียม answers ของนักเรียนเป็น list[list[str]]
+            # --- 1) แปลงคำตอบนักเรียนเป็น list[list[str]] ---
+        answers_lists = []
+        if "answers" in df.columns:
+            for s in df["answers"].astype(str).fillna(""):
+                # split + ทำความสะอาด + ตัดค่าว่าง
+                arr = [a.strip().upper() for a in s.split(",")]
+                arr = [a for a in arr if a]  # ตัดค่าว่าง
+                answers_lists.append(arr)
+        else:
             answers_lists = []
-            if "answers" in df.columns:
-                for s in df["answers"].astype(str).fillna(""):
-                    arr = [a.strip().upper() for a in s.split(",") if a is not None]
-                    answers_lists.append(arr)
-            else:
-                answers_lists = []
-
-            total = len(answers_lists)
-            qn_items = max((len(a) for a in answers_lists), default=0)
+        
+        total = len(answers_lists)
+        
+        # --- 2) ลองดึง detail เพื่อดูจำนวนข้อจากเฉลยรายข้อ ---
+        first_detail = None
+        if "detail" in df.columns:
+            for v in df["detail"]:
+                try:
+                    d = v if isinstance(v, list) else _json.loads(v) if isinstance(v, str) else None
+                    if isinstance(d, list) and len(d) > 0:
+                        first_detail = d
+                        break
+                except Exception:
+                    pass
+        qn_detail = len(first_detail) if isinstance(first_detail, list) else 0
+        
+        # --- 3) ลองดึง answer_key ของชุดนี้ (ถ้ามี) ---
+        answer_key = None
+        # ถ้ามี detail → ดึงเฉลยจาก detail
+        if isinstance(first_detail, list):
+            answer_key = [str(x.get("correct","")).strip().upper() if isinstance(x, dict) else "" for x in first_detail]
+        
+        # ถ้ายังไม่มี → ลอง get_active_exam (ใช้เฉพาะเมื่อ exam_id ตรง)
+        if answer_key is None:
+            try:
+                ex = gas_get("get_active_exam")
+                if ex.get("ok") and str(ex["data"].get("exam_id","")) == str(chosen_id):
+                    k = str(ex["data"].get("answer_key","") or "")
+                    answer_key = [c.strip().upper() for c in list(k)]
+            except Exception:
+                pass
+        
+        key_len = len(answer_key) if isinstance(answer_key, list) else 0
+        
+        # --- 4) เอาจำนวนข้อจาก "คำตอบจริง" ของนักเรียนแบบเสียงข้างมาก ---
+        lens = [len(a) for a in answers_lists]
+        maj_len = Counter(lens).most_common(1)[0][0] if lens else 0
+        
+        # --- 5) สรุปจำนวนข้อที่เชื่อถือได้ที่สุด ---
+        candidates = [x for x in [maj_len, qn_detail, key_len] if x and x > 0]
+        qn = min(candidates) if candidates else 0
+        
+        if qn == 0 or total == 0:
+            st.info("ยังไม่มีคำตอบ/จำนวนข้อเพียงพอสำหรับการวิเคราะห์รายข้อ")
+            st.stop()
+        
+        # --- 6) บังคับให้ทุกอย่างยาวเท่า qn (truncate) ---
+        answers_lists = [arr[:qn] for arr in answers_lists]
+        if isinstance(answer_key, list):
+            answer_key = answer_key[:qn]
 
             # 1) พยายามดึงเฉลยจาก detail ก่อน
             first_detail = None
