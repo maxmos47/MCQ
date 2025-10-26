@@ -324,63 +324,63 @@ def page_dashboard():
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
                 
-                # 0) เตรียม answers ของนักเรียนเป็น list[list[str]]
-                answers_lists = []
+            # 0) เตรียม answers ของนักเรียนเป็น list[list[str]]
+            answers_lists = []
                 if "answers" in df.columns:
-                    for s in df["answers"].astype(str).fillna(""):
-                        arr = [a.strip().upper() for a in s.split(",") if a is not None]
-                        answers_lists.append(arr)
+                        for s in df["answers"].astype(str).fillna(""):
+                                arr = [a.strip().upper() for a in s.split(",") if a is not None]
+                                answers_lists.append(arr)
                 else:
-                    answers_lists = []
-                
-                total = len(answers_lists)
-                qn_items = max((len(a) for a in answers_lists), default=0)
-                
+                        answers_lists = []
+                        
+                        total = len(answers_lists)
+                        qn_items = max((len(a) for a in answers_lists), default=0)
+                        
                 # 1) พยายามดึงเฉลยจาก detail ก่อน
                 first_detail = None
                 if "detail" in df.columns:
-                    for v in df["detail"]:
-                        try:
-                            d = v if isinstance(v, list) else _json.loads(v) if isinstance(v, str) else None
-                            if isinstance(d, list) and len(d) > 0:
-                                first_detail = d
-                                break
-                        except Exception:
-                            pass
-                
-                answer_key = None
-                if isinstance(first_detail, list):
-                    # ถ้ามี detail → สกัดเฉลยรายข้อ
-                    answer_key = [str(x.get("correct","")).strip().upper() if isinstance(x, dict) else "" for x in first_detail]
-                    qn_items = max(qn_items, len(answer_key))
-                
+                        for v in df["detail"]:
+                                try:
+                                        d = v if isinstance(v, list) else _json.loads(v) if isinstance(v, str) else None
+                                        if isinstance(d, list) and len(d) > 0:
+                                                first_detail = d
+                                                break
+                                except Exception:
+                                        pass
+                                        
+                                        answer_key = None
+                                        if isinstance(first_detail, list):
+                                                # ถ้ามี detail → สกัดเฉลยรายข้อ
+                                                answer_key = [str(x.get("correct","")).strip().upper() if isinstance(x, dict) else "" for x in first_detail]
+                                                qn_items = max(qn_items, len(answer_key))
+                                                
                 # 2) ถ้ายังไม่มีเฉลย ลองดึงจาก get_active_exam (ใช้ได้เมื่อชุดที่ดู = ชุด Active)
                 if answer_key is None:
-                    try:
-                        ex = gas_get("get_active_exam")
-                        if ex.get("ok"):
-                            data_ex = ex["data"]
-                            if str(data_ex.get("exam_id","")) == str(chosen_id):
-                                k = str(data_ex.get("answer_key","") or "")
-                                answer_key = [c.strip().upper() for c in list(k)]
-                                qn_items = max(qn_items, len(answer_key))
-                    except Exception:
-                        pass
+                        try:
+                                ex = gas_get("get_active_exam")
+                                if ex.get("ok"):
+                                        data_ex = ex["data"]
+                                        if str(data_ex.get("exam_id","")) == str(chosen_id):
+                                                k = str(data_ex.get("answer_key","") or "")
+                                                answer_key = [c.strip().upper() for c in list(k)]
+                                                qn_items = max(qn_items, len(answer_key))
+                        except Exception:
+                                pass
                 
                 if qn_items == 0 or total == 0:
-                    st.info("ยังไม่มีคำตอบเพียงพอสำหรับการวิเคราะห์รายข้อ")
+                        st.info("ยังไม่มีคำตอบเพียงพอสำหรับการวิเคราะห์รายข้อ")
                 else:
-                    # 3) แจกแจงการเลือกตัวเลือกต่อข้อ (ใช้ได้เสมอ)
-                    #    จะใช้เป็น fallback แสดงกราฟได้แม้ไม่มีเฉลย
-                    option_counts = [Counter() for _ in range(qn_items)]
-                    valid_opts = ["A","B","C","D","E"]
-                    for arr in answers_lists:
-                        for i in range(qn_items):
-                            opt = arr[i].upper() if i < len(arr) else ""
-                            opt = opt if opt in valid_opts else "(blank)"
-                            option_counts[i][opt] += 1
+                 # 3) แจกแจงการเลือกตัวเลือกต่อข้อ (ใช้ได้เสมอ)
+                 #    จะใช้เป็น fallback แสดงกราฟได้แม้ไม่มีเฉลย
+                        option_counts = [Counter() for _ in range(qn_items)]
+                        valid_opts = ["A","B","C","D","E"]
+                        for arr in answers_lists:
+                                for i in range(qn_items):
+                                        opt = arr[i].upper() if i < len(arr) else ""
+                                        opt = opt if opt in valid_opts else "(blank)"
+                                        option_counts[i][opt] += 1
                 
-                    # 4) ถ้ามีเฉลย → คำนวณถูก/ผิดต่อข้อ
+                 # 4) ถ้ามีเฉลย → คำนวณถูก/ผิดต่อข้อ
                     if answer_key is not None and any(answer_key):
                         correct_counts = [0]*qn_items
                         for arr in answers_lists:
