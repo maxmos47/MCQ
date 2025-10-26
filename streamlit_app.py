@@ -26,9 +26,12 @@ def gas_post(action: str, payload: dict):
     r = requests.post(url, json=payload, timeout=30)
     return r.json()
 
-# Read query params
-qp = st.query_params
-mode = qp.get("mode", ["exam"])[0].lower()
+# 🔧 robust query-param handling
+raw_mode = st.query_params.get("mode", "exam")
+# Streamlit >=1.30 returns str, older versions may return list; handle both
+if isinstance(raw_mode, list) and raw_mode:
+    raw_mode = raw_mode[0]
+mode = str(raw_mode).strip().lower()
 
 # Common: fetch config
 def fetch_config():
