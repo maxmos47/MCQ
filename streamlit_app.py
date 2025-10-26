@@ -86,21 +86,20 @@ def page_exam():
     end_ts = ss[timer_key]
     remaining_sec = max(0, int(end_ts - time.time()))
 
-    # 3.1) เปิด autorefresh แค่ช่วง 5 วินาทีสุดท้าย (กัน throttle / ไม่กวนตอนพิมพ์)
+    # 3.1) เปิด autorefresh เฉพาะช่วง 7 วินาทีสุดท้าย (กัน throttle / ไม่กวนตอนพิมพ์)
     is_pending = ss.get("pending_submit_payload") is not None
+    TAIL_SECONDS = 7
     want_autorefresh_tail = (
         (not ss.get("submitted", False)) and
         (not is_pending) and
         (not ss.get("suppress_autorefresh", False)) and
         (remaining_sec > 0) and
-        (remaining_sec <= 5)          # ✅ เปิดเฉพาะ 5 วิสุดท้าย
+        (remaining_sec <= TAIL_SECONDS)
     )
-
     if want_autorefresh_tail:
-        # รีรันทุก 1 วิ ในโค้งสุดท้ายเท่านั้น เพื่อให้ถึง 00:00 แล้วเข้า autosubmit แน่ ๆ
         st_autorefresh(
-            interval=1000,            # 1 วินาที
-            limit=remaining_sec,      # หยุดเองเมื่อถึงศูนย์
+            interval=1000,                # 1 วิ
+            limit=remaining_sec,
             key=f"autorefresh-tail-{exam_id}-{int(end_ts)}",
         )
 
@@ -124,7 +123,7 @@ def page_exam():
     </script>
     """, height=40)
 
-    # 3.3) หมดเวลา → บังคับส่งอัตโนมัติ (ยิงครั้งเดียว)
+    # 3.3) หมดเวลา → บังคับส่งอัตโนมัติ
     if remaining_sec == 0 and (not ss.get("submitted", False)) and (not ss["auto_submit_done"]):
         ss["suppress_autorefresh"] = True
         st.warning("⏰ หมดเวลาทำข้อสอบ ระบบกำลังส่งคำตอบให้อัตโนมัติ…")
@@ -150,7 +149,7 @@ def page_exam():
     # 4) ควบคุมการปิด/เปิดอินพุต
     disabled_all = ss["submitted"] or is_pending or (remaining_sec == 0)
 
-    # 5) ฟอร์ม (ไม่ rerun ระหว่างเลือก radio)
+    # 5) ฟอร์ม
     form_disabled = disabled_all
     with st.form("exam_form", clear_on_submit=False):
         name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
@@ -182,8 +181,7 @@ def page_exam():
 
     # 6) เตรียม payload เมื่อกดส่งปกติ
     if submitted_form and not ss["submitted"]:
-        ss["suppress_autorefresh"] = True  # กันหน้ามืดค้างขณะส่ง
-
+        ss["suppress_autorefresh"] = True
         if remaining_sec == 0:
             ss["submit_error"] = "หมดเวลาแล้ว ไม่สามารถส่งคำตอบได้"
             ss["suppress_autorefresh"] = False
@@ -198,7 +196,7 @@ def page_exam():
                 "answers": ss["answers"],
             }
 
-    # 7) ส่งจริง → ล็อคทันที + spinner + rerun
+    # 7) ส่งจริง
     if ss["pending_submit_payload"] is not None:
         with st.spinner("กำลังส่งคำตอบ..."):
             try:
@@ -219,7 +217,7 @@ def page_exam():
                 ss["pending_submit_payload"] = None
         st.rerun()
 
-    # 8) แสดงผลลัพธ์/ข้อผิดพลาด
+    # 8) แสดงผลลัพธ์
     if ss["submit_error"]:
         st.error(ss["submit_error"])
 
