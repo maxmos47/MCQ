@@ -3,8 +3,12 @@ import requests
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import matplotlip as mpl
+mpl._version_
 import textwrap
 import os, urllib.request
+
+plt.rcParams['font.family'] = Tahoma
 
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
