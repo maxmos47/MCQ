@@ -120,7 +120,7 @@ def page_exam():
       tick();
       setInterval(tick, 250);
     </script>
-    "", height=40)
+    """, height=40)
 
     # 3.2) ถ้าหมดเวลา → บังคับส่งอัตโนมัติ (ยิงครั้งเดียว)
     # เงื่อนไข: remaining_sec == 0 หรือมีพารามิเตอร์ timeup=1 จากการรีโหลด
