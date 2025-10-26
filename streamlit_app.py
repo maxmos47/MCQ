@@ -396,6 +396,7 @@ def page_dashboard():
         id_to_title = {e["exam_id"]: e["title"] for e in exams}
         options = [e["exam_id"] for e in exams]
         current_idx = options.index(active_id) if active_id in options else 0
+        current_exam = next((e for e in exams if e["exam_id"] == chosen_id), {})
 
         new_idx = st.selectbox(
             "เลือกชุดข้อสอบที่จะใช้งาน (Active)",
