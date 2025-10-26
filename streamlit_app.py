@@ -228,34 +228,20 @@ def page_dashboard():
             return
         st.success("เข้าสู่ระบบแล้ว ✅")
 
-     # โหลด Config/Exams
-    try:
-        cfg = gas_get("get_config")
-        if not cfg.get("ok"):
-            st.error(cfg.get("error", "Config error"))
-            return
-        data = cfg.get("data", {}) or {}
-
-        # พยายามอ่าน exams จาก get_config ก่อน
-        exams = data.get("exams", None)
-
-        # ถ้าไม่มี exams → fallback ไป list_exams
-        if not exams:
-            le = gas_get("list_exams")
-            exams = le.get("data", []) if le.get("ok") else []
-
-    active_id = data.get("active_exam_id", "")
+    # โหลด Config/Exams
+try:
+    cfg = gas_get("get_config")
+    if not cfg.get("ok"):
+        st.error(cfg.get("error", "Config error"))
+        return
+    exams = cfg["data"]["exams"]
+    active_id = cfg["data"].get("active_exam_id", "")
 except Exception as e:
     st.error(f"โหลดข้อมูลล้มเหลว: {e}")
-    with st.expander("ดีบั๊ก: ผลลัพธ์ get_config"):
-        try:
-            st.json(cfg)
-        except:
-            st.write("ไม่มี cfg หรือไม่ใช่ JSON")
     return
 
 if not exams:
-    st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams' หรือ API ไม่ได้ส่งรายการชุดสอบมา")
+    st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
     return
 
         # เลือกชุดข้อสอบ Active
