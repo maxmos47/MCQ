@@ -7,6 +7,36 @@ import textwrap
 import matplotlib.font_manager as fm
 import os, urllib.request
 
+# โหลด/ตั้งค่าฟอนต์ไทยให้ Matplotlib
+def ensure_thai_font():
+    local_font = os.path.join(os.path.dirname(__file__), "fonts", "NotoSansThai-Regular.ttf")
+    tmp_font   = "/tmp/NotoSansThai-Regular.ttf"
+
+    font_path = None
+    if os.path.exists(local_font):
+        font_path = local_font
+    else:
+        # fallback: ดาวน์โหลดจาก Google Fonts (ถ้าไม่มีในโปรเจกต์)
+        try:
+            if not os.path.exists(tmp_font):
+                urllib.request.urlretrieve(
+                    "https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai-Regular.ttf",
+                    tmp_font,
+                )
+            font_path = tmp_font
+        except Exception as e:
+            print("WARN: download Thai font failed:", e)
+
+    # ลงทะเบียนฟอนต์ + บังคับใช้
+    if font_path and os.path.exists(font_path):
+        fm.fontManager.addfont(font_path)
+        plt.rcParams["font.family"] = ["Noto Sans Thai", "DejaVu Sans", "sans-serif"]
+    else:
+        plt.rcParams["font.family"] = ["DejaVu Sans", "sans-serif"]
+
+    # กันปัญหาเครื่องหมายลบแสดงเป็นสี่เหลี่ยม
+    plt.rcParams["axes.unicode_minus"] = False
+
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
 GAS_WEBAPP_URL = st.secrets.get("gas", {}).get("webapp_url", "").strip()
@@ -227,6 +257,7 @@ def page_dashboard():
             st.write(f"ค่าเฉลี่ย: {avg:.1f}% | สูงสุด: {best}% | ต่ำสุด: {worst}%")
 
             # === กราฟคะแนนอ่านง่าย (แนวนอน) ===
+            ensure_thai_font() 
             plot_df = df[["student_name", "percent"]].copy()
             plot_df["student_name"] = plot_df["student_name"].astype(str).str.strip()
             def wrap_label(s, width=10):
