@@ -42,7 +42,6 @@ if isinstance(raw_mode, list) and raw_mode:
 mode = str(raw_mode).strip().lower()
 
 # ====================== Student Page ======================
-# ====================== Student Page ======================
 def page_exam():
     st.markdown("### 📝 กระดาษคำตอบ MCQ (มือถือ) — ชุดข้อสอบที่อาจารย์กำหนด")
     if not GAS_WEBAPP_URL:
