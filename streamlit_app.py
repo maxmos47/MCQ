@@ -8,6 +8,7 @@ import matplotlib as mpl
 import textwrap
 import os
 import urllib.request
+import json as _json
 
 # ---------------- Fonts (Thai) ----------------
 # พยายามใช้ TH Sarabun New ถ้ามีไฟล์ในโปรเจกต์ (เช่น thsarabunnew-webfont.ttf)
@@ -349,6 +350,87 @@ def page_dashboard():
                     ax2.text(x, y + 2, f"{y}%", ha="center", fontsize=10)
                 plt.tight_layout()
                 st.pyplot(fig2, use_container_width=True)
+
+# ===== Item Analysis: ข้อไหนเด็กผิดเยอะ? =====
+# แปลง detail ให้เป็น list เสมอ + หา qn (จำนวนข้อ)
+details = []
+qn_items = 0
+if "detail" in df.columns:
+    for v in df["detail"]:
+        try:
+            d = v if isinstance(v, list) else _json.loads(v) if isinstance(v, str) else []
+        except Exception:
+            d = []
+        details.append(d)
+        if isinstance(d, list):
+            qn_items = max(qn_items, len(d))
+else:
+    details = []
+    qn_items = 0
+
+if qn_items == 0:
+    st.info("ยังไม่มีข้อมูลเฉลยรายข้อ (detail) เพียงพอสำหรับ Item Analysis")
+else:
+    total = len(details)
+    correct_counts = [0] * qn_items
+    # นับจำนวนตอบถูกต่อข้อ
+    for d in details:
+        for i in range(qn_items):
+            if i < len(d):
+                item = d[i]
+                ok = False
+                if isinstance(item, dict):
+                    ok = bool(item.get("is_correct"))
+                # เผื่อรูปแบบอื่นในอนาคต
+                elif isinstance(item, (list, tuple)) and len(item) >= 1:
+                    ok = bool(item[0])
+                if ok:
+                    correct_counts[i] += 1
+
+    wrong_counts = [total - c for c in correct_counts]
+    perc_correct = [round((c * 100) / total) if total > 0 else 0 for c in correct_counts]
+
+    # ตารางสรุป
+    item_df = pd.DataFrame({
+        "ข้อ": [i + 1 for i in range(qn_items)],
+        "ถูก(คน)": correct_counts,
+        "ผิด(คน)": wrong_counts,
+        "%ถูก": perc_correct,
+    })
+
+    st.subheader("📌 Item Analysis — สรุปการตอบถูกรายข้อ")
+    st.dataframe(item_df, hide_index=True, use_container_width=True)
+
+    # ===== กราฟ 1: % ถูก ต่อข้อ (เรียงจากต่ำ→สูง เพื่อเห็นข้อที่ผิดเยอะอยู่บนสุด) =====
+    plot1 = item_df.sort_values("%ถูก", ascending=True)
+    fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.5 * len(plot1))))
+    ax1.barh(plot1["ข้อ"].astype(str), plot1["%ถูก"])
+    ax1.set_xlabel("% ถูก", fontsize=12)
+    ax1.set_ylabel("ข้อ", fontsize=12)
+    ax1.set_xlim(0, 100)
+    ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยาก→ง่าย)", fontsize=14, pad=12)
+    for i, v in enumerate(plot1["%ถูก"].tolist()):
+        ax1.text(v + 1, i, f"{v}%", va="center", fontsize=11)
+    plt.tight_layout()
+    st.pyplot(fig1, use_container_width=True)
+
+    # ===== กราฟ 2: ซ้อน Correct/Wrong ต่อข้อ (ภาพรวม) =====
+    plot2 = item_df.copy()  # ไม่ต้องเรียง เพื่อคงลำดับข้อ 1..n
+    fig2, ax2 = plt.subplots(figsize=(10, max(3.5, 0.5 * len(plot2))))
+    y = plot2["ข้อ"].astype(str)
+    ax2.barh(y, plot2["ผิด(คน)"], label="Wrong")
+    ax2.barh(y, plot2["ถูก(คน)"], left=plot2["ผิด(คน)"], label="Correct")
+    ax2.set_xlabel("จำนวนนักเรียน", fontsize=12)
+    ax2.set_ylabel("ข้อ", fontsize=12)
+    ax2.set_title("จำนวนถูก/ผิด ต่อข้อ (Stacked)", fontsize=14, pad=12)
+    ax2.legend(loc="lower right")
+    plt.tight_layout()
+    st.pyplot(fig2, use_container_width=True)
+
+    # ข้อที่ผิดเยอะที่สุด (ช่วยสรุป)
+    hardest = plot1.iloc[0]
+    st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: ข้อ {hardest['ข้อ']} (ถูก {hardest['%ถูก']}%)")
+
 
         except Exception as e:
             st.error(f"โหลดข้อมูลล้มเหลว: {e}")
