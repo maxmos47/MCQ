@@ -99,6 +99,9 @@ def page_exam():
     ss.setdefault("submit_result", None)
     ss.setdefault("submit_error", None)
     ss.setdefault("answers", [""] * qn)
+    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
+    ss["auto_name"] = name.strip()  # ✅ เก็บชื่อไว้สำหรับ auto submit
+
 
     # ถ้ามีผลลัพธ์แล้ว ให้ล็อคทันที
     if ss["submit_result"] is not None:
@@ -169,6 +172,29 @@ def page_exam():
                 ss["submitted"] = False
             finally:
                 ss["pending_submit_payload"] = None
+        st.rerun()
+
+    # ถ้าเวลาหมดและยังไม่ได้ส่งคำตอบ → ส่งอัตโนมัติ
+    if remaining_sec == 0 and not st.session_state.get("submitted", False):
+        if qn > 0:
+            # สร้าง payload อัตโนมัติ
+            payload = {
+                "exam_id": exam_id,
+                "student_name": st.session_state.get("auto_name", "Unnamed"),
+                "answers": st.session_state.get("answers", [""] * qn),
+            }
+            st.warning("⏰ หมดเวลาทำข้อสอบ ระบบได้ส่งคำตอบให้อัตโนมัติแล้ว")
+
+        try:
+            js2 = gas_post("submit", payload)
+            if js2.get("ok"):
+                st.session_state["submit_result"] = js2["data"]
+                st.session_state["submitted"] = True
+                st.session_state["submit_error"] = None
+            else:
+                st.session_state["submit_error"] = js2.get("error", "ส่งคำตอบไม่สำเร็จ")
+        except Exception as e:
+            st.session_state["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
         st.rerun()
 
     # 8) แสดงผลลัพธ์/ข้อผิดพลาด
