@@ -49,20 +49,30 @@ def page_exam():
         return
 
     # โหลดชุดข้อสอบที่กำลังใช้งาน (คาดว่า GAS ส่ง window: {now_server,start_ts,end_ts,is_open} มาด้วย)
-    try:
-        js = gas_get("get_active_exam")
-        if not js.get("ok"):
-            st.error("ยังไม่ได้กำหนดชุดข้อสอบที่ใช้อยู่ (Active Exam)")
-            st.info("ให้อาจารย์ไปตั้งค่าที่หน้า Dashboard")
-            return
-        exam = js["data"]
-    except Exception as e:
-        st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
+  try:
+    js = gas_get("get_active_exam")
+    if not js.get("ok"):
+        st.error("ยังไม่ได้กำหนดชุดข้อสอบที่ใช้อยู่ (Active Exam)")
         return
+    exam = js["data"]
+    except Exception as e:
+    st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
+    return
 
-    exam_id = exam.get("exam_id", "")
     qn = int(exam.get("question_count", 0))
-    st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
+    exam_id = exam.get("exam_id", "")  # 🟩 ประกาศ exam_id ก่อนใช้
+    st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ")
+
+    # 🕒 เริ่ม block ตั้งเวลาได้หลังจากนี้เท่านั้น
+    DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))
+    ss = st.session_state
+
+    timer_key = f"timer_end_{exam_id}"
+    if timer_key not in ss:
+    ss[timer_key] = time.time() + DURATION_MIN * 60
+
+    end_ts = ss[timer_key]
+    remaining_sec = max(0, int(end_ts - time.time()))
 
     # --- Session state ---
     ss = st.session_state
@@ -76,18 +86,6 @@ def page_exam():
     # ถ้ามีผลลัพธ์แล้ว ให้ล็อคทันที
     if ss["submit_result"] is not None:
         ss["submitted"] = True
-
-    # ==== ตั้งตัวจับเวลา ====
-DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))  # ไม่มีใน secrets → 20 นาที
-ss = st.session_state
-
-# แยก timer ต่อชุดข้อสอบ เพื่อกันชนกับชุดอื่น
-timer_key = f"timer_end_{exam_id}"
-if timer_key not in ss:
-    ss[timer_key] = time.time() + DURATION_MIN * 60
-
-end_ts = ss[timer_key]
-remaining_sec = max(0, int(end_ts - time.time()))
 
 # ==== แสดง countdown แบบลื่น (ไม่ rerun) ด้วย HTML/JS ====
 components.html(f"""
