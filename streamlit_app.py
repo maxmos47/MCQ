@@ -7,6 +7,7 @@ import matplotlib as mpl
 import textwrap
 import os, urllib.request
 import time
+import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
 
 plt.rcParams['font.family'] = 'tahoma'
@@ -63,18 +64,6 @@ def page_exam():
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    # ========= อ่านหน้าต่างเวลา & เคานต์ดาวน์ =========
-    win = exam.get("window", {}) or {}
-    now_server = int(win.get("now_server") or 0)   # ms
-    start_ts   = win.get("start_ts")               # ms | None
-    end_ts     = win.get("end_ts")                 # ms | None
-    is_open    = bool(win.get("is_open", True))
-
-    # ถ้าตั้งเวลาไว้ครบ และอยู่นอกช่วง → ไม่อนุญาตให้เข้าทำข้อสอบ
-    if (start_ts is not None and end_ts is not None) and not is_open:
-        st.error("อยู่นอกช่วงเวลาที่อนุญาตให้สอบ")
-        st.stop()
-
     # --- Session state ---
     ss = st.session_state
     ss.setdefault("submitted", False)               # ล็อคถาวรหลังส่งสำเร็จ
@@ -88,49 +77,43 @@ def page_exam():
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
-    # ===== เคานต์ดาวน์ (อิง server time) + แสดงเวลาเซิร์ฟเวอร์ =====
-    remain_ms = None
-    if end_ts is not None and now_server > 0:
-        # ชดเชยนาฬิกา client ให้ตรงกับ server
-        client_now_ms = int(time.time() * 1000)
-        offset = now_server - client_now_ms  # server - client
+    # ==== ตั้งตัวจับเวลา ====
+DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))  # ไม่มีใน secrets → 20 นาที
+ss = st.session_state
 
-        # อัปเดตทุก 1 วินาทีเฉพาะตอนยังไม่ส่ง
-        if not ss["submitted"]:
-            st_autorefresh(interval=1000, key="exam_countdown_tick")
+# แยก timer ต่อชุดข้อสอบ เพื่อกันชนกับชุดอื่น
+timer_key = f"timer_end_{exam_id}"
+if timer_key not in ss:
+    ss[timer_key] = time.time() + DURATION_MIN * 60
 
-        # เวลาปัจจุบัน (เทียบเซิร์ฟเวอร์)
-        now_adj = int(time.time() * 1000) + offset
-        remain_ms = max(0, int(end_ts) - now_adj)
+end_ts = ss[timer_key]
+remaining_sec = max(0, int(end_ts - time.time()))
 
-        # สร้างสตริงเวลา (โซนเวลาไทย)
-        tz = datetime.timezone(datetime.timedelta(hours=7))  # Asia/Bangkok
-        server_time_str = datetime.datetime.fromtimestamp(now_adj / 1000, tz).strftime("%H:%M:%S")
-        start_time_str  = datetime.datetime.fromtimestamp(start_ts / 1000, tz).strftime("%H:%M:%S") if start_ts else "-"
-        end_time_str    = datetime.datetime.fromtimestamp(end_ts / 1000, tz).strftime("%H:%M:%S")   if end_ts   else "-"
+# ==== แสดง countdown แบบลื่น (ไม่ rerun) ด้วย HTML/JS ====
+components.html(f"""
+<div style="font-size:1.1rem; font-weight:600; margin: 0.25rem 0;">
+  ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
+</div>
+<script>
+  const end = {int(end_ts * 1000)};
+  const t = document.getElementById('t');
+  function pad(n){{return n.toString().padStart(2,'0');}}
+  function tick(){{
+    const now = Date.now();
+    let s = Math.max(0, Math.floor((end - now)/1000));
+    const m = Math.floor(s/60);
+    const ss = s % 60;
+    t.textContent = `${{pad(m)}}:${{pad(ss)}}`;
+  }}
+  tick();
+  setInterval(tick, 250);
+</script>
+""", height=40)
 
-        # แสดงเวลาและเวลาคงเหลือ
-        sec = remain_ms // 1000
-        mm = sec // 60
-        ss_ = sec % 60
-        st.info(
-            f"🕒 **เวลาเซิร์ฟเวอร์:** {server_time_str}  \n"
-            f"🟢 ช่วงเวลาสอบ: {start_time_str} – {end_time_str}  \n"
-            f"⏳ เวลาสอบคงเหลือ: **{mm:02d}:{ss_:02d}**"
-        )
-        st.write("DEBUG window:", win)
+# ถ้าเวลาหมด → บังคับปิดฟอร์ม/ปุ่มส่ง และบอกผู้ใช้
+if remaining_sec == 0 and not ss.get("submitted", False):
+    st.warning("⛔ หมดเวลาแล้ว กรุณาส่งข้อสอบภายในเวลาที่กำหนด")
 
-        # หมดเวลา → เตรียม payload ส่งอัตโนมัติ
-        if remain_ms == 0 and not ss["submitted"]:
-            if ss.get("pending_submit_payload") is None:
-                ss["submit_error"] = None
-                ss["pending_submit_payload"] = {
-                    "exam_id": exam_id,
-                    "student_name": ss.get("auto_name", "") or "",
-                    "answers": ss.get("answers", []),
-                }
-            st.warning("หมดเวลา ระบบกำลังส่งคำตอบให้อัตโนมัติ…")
-            st.rerun()
 
     # ===== ฟอร์มทำข้อสอบ (ไม่ rerun ระหว่างเลือก) =====
     is_pending = ss["pending_submit_payload"] is not None
