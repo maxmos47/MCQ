@@ -9,39 +9,6 @@ import textwrap
 import os
 import urllib.request
 
-# ---- วางไว้ด้านบนไฟล์ (imports) ----
-from datetime import datetime, timezone
-try:
-    # Python 3.9+ มี zoneinfo ในมาตรฐาน
-    from zoneinfo import ZoneInfo
-    TZ_BKK = ZoneInfo("Asia/Bangkok")
-except Exception:
-    TZ_BKK = timezone.utc  # fallback
-
-# ---- helper: แปลง ISO-UTC -> datetime และฟอร์แมตเป็นเวลาไทย (ปี พ.ศ.) ----
-TH_MONTHS_ABBR = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."]
-
-def parse_iso_utc(s: str) -> datetime | None:
-    if not s:
-        return None
-    try:
-        # รองรับทั้ง ...Z และ +00:00
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
-    except Exception:
-        return None
-
-def format_th_buddhist(dt_utc: datetime | None) -> str:
-    """รับ datetime (UTC) -> คืนข้อความเวลาไทย เช่น '28 ต.ค. 2568 20:00 น.' """
-    if dt_utc is None:
-        return ""
-    dt_th = dt_utc.astimezone(TZ_BKK)
-    d = dt_th.day
-    m = TH_MONTHS_ABBR[dt_th.month - 1]
-    y_be = dt_th.year + 543
-    hh = f"{dt_th.hour:02d}"
-    mm = f"{dt_th.minute:02d}"
-    return f"{d} {m} {y_be} {hh}:{mm} น."
-
 # ---------------- Fonts (Thai) ----------------
 # พยายามใช้ TH Sarabun New ถ้ามีไฟล์ในโปรเจกต์ (เช่น thsarabunnew-webfont.ttf)
 try:
@@ -92,36 +59,24 @@ if isinstance(raw_mode, list) and raw_mode:
 mode = str(raw_mode).strip().lower()
 
 # ====================== Student Page ======================
-# ====================== Student Page (Mode A: Fixed Window Time + Thai display) ======================
 from datetime import datetime, timezone
-try:
-    from zoneinfo import ZoneInfo
-    TZ_BKK = ZoneInfo("Asia/Bangkok")
-except Exception:
-    TZ_BKK = timezone.utc  # fallback ถ้าไม่มี zoneinfo (แต่บน Streamlit/py>=3.9 จะมี)
 
-TH_MONTHS_ABBR = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."]
-
-def parse_iso_utc(s: str) -> datetime | None:
-    """รับสตริง ISO (UTC) → datetime (UTC). รองรับ ...Z และ +00:00"""
-    if not s:
-        return None
+def is_within_window(start_utc: str, end_utc: str) -> tuple[bool, str]:
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
-    except Exception:
-        return None
-
-def format_th_buddhist(dt_utc: datetime | None) -> str:
-    """datetime (UTC) → ข้อความเวลาไทย (พ.ศ.) เช่น '28 ต.ค. 2568 20:00 น.'"""
-    if dt_utc is None:
-        return ""
-    dt_th = dt_utc.astimezone(TZ_BKK)
-    d = dt_th.day
-    m = TH_MONTHS_ABBR[dt_th.month - 1]
-    y_be = dt_th.year + 543
-    hh = f"{dt_th.hour:02d}"
-    mm = f"{dt_th.minute:02d}"
-    return f"{d} {m} {y_be} {hh}:{mm} น."
+        if not start_utc or not end_utc:
+            # ถ้าขาดอย่างใดอย่างหนึ่ง = ถือว่าไม่ได้ล็อกเวลา
+            return True, "ไม่จำกัดเวลา"
+        now = datetime.now(timezone.utc)
+        start = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
+        end   = datetime.fromisoformat(end_utc.replace("Z", "+00:00"))
+        if now < start:
+            return False, f"ยังไม่ถึงเวลาสอบ (เริ่ม {start_utc})"
+        if now > end:
+            return False, f"หมดเวลาทำข้อสอบแล้ว (สิ้นสุด {end_utc})"
+        return True, ""
+    except Exception as e:
+        # ถ้าพาร์สเวลาไม่ได้ ให้ปล่อยผ่าน (ไม่ล็อก) เพื่อไม่บล็อคผู้ใช้โดยผิดพลาด
+        return True, f"ไม่สามารถตรวจสอบเวลาได้ ({e})"
 
 def page_exam():
     st.markdown("### 📝 กระดาษคำตอบ MCQ (มือถือ) — ชุดข้อสอบที่อาจารย์กำหนด")
@@ -129,7 +84,7 @@ def page_exam():
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
 
-    # ------------------ 1) โหลดชุดข้อสอบ ------------------
+    # 1) โหลดชุดข้อสอบ
     try:
         js = gas_get("get_active_exam")
         if not js.get("ok"):
@@ -141,45 +96,28 @@ def page_exam():
         st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
         return
 
-    # ------------------ 2) แสดงข้อมูลชุดสอบ ------------------
     qn = int(exam.get("question_count", 0))
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    # ------------------ 3) ตรวจสอบช่วงเวลา + แสดงเป็นเวลาไทย ------------------
-    window_start_raw = exam.get("window_start_utc", "") or ""
-    window_end_raw   = exam.get("window_end_utc", "") or ""
+    # 2) ตรวจช่วงเวลา (บังคับปิดฟอร์มถ้าอยู่นอกช่วง)
+    time_mode_raw = (exam.get("time_mode", "") or "").strip().lower()
+    window_start  = exam.get("window_start_utc", "") or ""
+    window_end    = exam.get("window_end_utc", "") or ""
 
-    start_utc = parse_iso_utc(window_start_raw)
-    end_utc   = parse_iso_utc(window_end_raw)
-    start_th  = format_th_buddhist(start_utc) if start_utc else ""
-    end_th    = format_th_buddhist(end_utc)   if end_utc   else ""
+    # ถ้ามี start และ end ให้ถือว่า "ล็อกเวลา" ไม่ว่าค่า time_mode จะเป็นอะไร
+    has_window = bool(window_start and window_end)
+    ok_time, msg_time = is_within_window(window_start, window_end)
 
-    has_any_window = bool(window_start_raw or window_end_raw)
-
-    # กติกา: ถ้ามี start แล้วตอนนี้ < start → ปิดฟอร์ม / ถ้ามี end แล้วตอนนี้ > end → ปิดฟอร์ม
-    now_utc = datetime.now(timezone.utc)
-    out_of_window = (
-        (start_utc is not None and now_utc < start_utc) or
-        (end_utc   is not None and now_utc > end_utc)
-    )
-
-    if has_any_window:
-        # โชว์เวลาไทย และ (UTC) กำกับเพื่อความชัดเจน
-        st.caption(f"🕒 ช่วงเวลาสอบ (เวลาไทย): {start_th or '—'} → {end_th or '—'}")
-        st.caption(f"🌐 ช่วงเวลา (UTC): {window_start_raw or '—'} → {window_end_raw or '—'}")
-
-    if has_any_window and out_of_window:
-        # ปิดฟอร์มทันทีเมื่ออยู่นอกช่วง
-        if start_utc and now_utc < start_utc:
-            st.error("⏰ ยังไม่ถึงเวลาสอบ")
-        elif end_utc and now_utc > end_utc:
-            st.error("⏰ หมดเวลาทำข้อสอบแล้ว")
-        # แจ้งซ้ำด้วยช่วงเวลาที่อ่านง่าย (ไทย)
-        st.info(f"ทำได้ช่วง (เวลาไทย): {start_th or '—'} → {end_th or '—'}")
+    if has_window and not ok_time:
+        st.error(f"⏰ {msg_time}")
+        st.info(f"ช่วงเวลาสอบ (UTC): {window_start} → {window_end}")
+        # 🔒 ปิดฟอร์มทันที: ไม่ render ฟอร์มด้านล่าง
         return
+    elif has_window:
+        st.caption(f"🕒 ช่วงเวลาสอบ (UTC): {window_start} → {window_end}")
 
-    # ------------------ 4) Session State ------------------
+    # 3) เหมือน baseline เดิมต่อไป (ฟอร์ม + ส่งคำตอบ)
     ss = st.session_state
     ss.setdefault("submitted", False)
     ss.setdefault("pending_submit_payload", None)
@@ -190,7 +128,6 @@ def page_exam():
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
-    # ------------------ 5) สร้างฟอร์มตอบ ------------------
     is_pending = ss["pending_submit_payload"] is not None
     disabled_all = ss["submitted"] or is_pending
 
@@ -221,7 +158,6 @@ def page_exam():
             disabled=disabled_all,
         )
 
-    # ------------------ 6) เตรียม payload เมื่อกดส่ง ------------------
     if submitted_form and not ss["submitted"]:
         if not name.strip():
             ss["submit_error"] = "กรุณากรอกชื่อ"
@@ -233,7 +169,6 @@ def page_exam():
                 "answers": ss["answers"],
             }
 
-    # ------------------ 7) ส่งจริง → ล็อค + spinner + rerun ------------------
     if ss["pending_submit_payload"] is not None:
         with st.spinner("กำลังส่งคำตอบ..."):
             try:
@@ -253,7 +188,6 @@ def page_exam():
                 ss["pending_submit_payload"] = None
         st.rerun()
 
-    # ------------------ 8) แสดงผลลัพธ์/ข้อผิดพลาด ------------------
     if ss["submit_error"]:
         st.error(ss["submit_error"])
 
