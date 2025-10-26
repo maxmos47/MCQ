@@ -425,11 +425,12 @@ def page_dashboard():
                     st.error(f"บันทึกล้มเหลว: {e}")
         with col2:
             st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
-            # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ (อิสระ & 1 นาที Step) -------------------
+
+        # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ (อิสระ & 1 นาที Step) -------------------
         st.divider()
         st.subheader(f"⏰ ตั้งค่าช่วงเวลาสอบสำหรับชุด: {chosen_id}") 
         
-        # Helper: แปลงเวลา UTC กลับมาเป็นเวลาไทย (UTC+7) สำหรับการแสดงผลใน input field
+        # Helper: parse_datetime_ict
         def parse_datetime_ict(utc_iso: str):
             from datetime import datetime, timedelta
             try:
@@ -453,69 +454,75 @@ def page_dashboard():
         end_date_val = default_end_ict.date() if default_end_ict else (datetime.now() + timedelta(hours=1)).date()
         end_time_val = default_end_ict.time() if default_end_ict else (datetime.now() + timedelta(hours=1)).time()
 
-        # 📌 การจัดการ Session State สำหรับปุ่ม Clear (สำคัญมาก)
+        # 📌 การจัดการ Session State สำหรับปุ่ม Clear
         if 'clear_start_triggered' not in st.session_state:
             st.session_state.clear_start_triggered = False
         if 'clear_end_triggered' not in st.session_state:
             st.session_state.clear_end_triggered = False
 
-        # 📌 กำหนดค่าเริ่มต้นให้ start/end date/time เป็น None เพื่อใช้ใน logic การบันทึก
+        # 📌 กำหนดค่าเริ่มต้นให้ start/end date/time เป็น None 
+        # (ค่าจริงจะมาจาก form inputs หรือถูก override ด้วย None)
         start_date, start_time = None, None
         end_date, end_time = None, None
         
+        # ------------------ Input Form -------------------
         with st.form("exam_window_form", border=True):
             st.markdown("##### กำหนดช่วงเวลา (เวลาประเทศไทย)")
             
             # --- START TIME ---
-            st.caption("✅ เวลาเริ่มต้น (ถ้าไม่กำหนด ให้กด 'ล้างเวลาเริ่มต้น'):")
+            st.caption("✅ เวลาเริ่มต้น (ถ้าไม่กำหนด ให้กด 'ล้างเวลาเริ่มต้น' ด้านล่าง):")
             
-            # สร้าง Input Fields ด้วยค่า default
-            col_s_date, col_s_time, col_s_clear = st.columns([1, 1, 0.4])
+            col_s_date, col_s_time = st.columns(2)
             
             with col_s_date:
-                # Input fields ต้องอยู่ภายใน form เสมอ
                 start_date = st.date_input("วันที่เริ่มต้น", value=start_date_val, key="in_start_date")
             with col_s_time:
-                # 📌 FIX: เพิ่ม step=60 เพื่อให้ตั้งเวลาได้ละเอียดถึง 1 นาที
+                # 📌 FIX: เพิ่ม step=60
                 start_time = st.time_input("เวลาเริ่มต้น", value=start_time_val, key="in_start_time", step=60)
-            with col_s_clear:
-                st.write("") # Spacer
-                st.write("") # Spacer
-                if st.button("ล้างเวลาเริ่มต้น", key="btn_clear_start"):
-                    st.session_state.clear_start_triggered = True
-                    st.rerun() 
             
             st.divider()
 
             # --- END TIME ---
-            st.caption("🛑 เวลาสิ้นสุด (ถ้าไม่กำหนด ให้กด 'ล้างเวลาสิ้นสุด'):")
+            st.caption("🛑 เวลาสิ้นสุด (ถ้าไม่กำหนด ให้กด 'ล้างเวลาสิ้นสุด' ด้านล่าง):")
             
-            col_e_date, col_e_time, col_e_clear = st.columns([1, 1, 0.4])
+            col_e_date, col_e_time = st.columns(2)
             
             with col_e_date:
                 end_date = st.date_input("วันที่สิ้นสุด", value=end_date_val, key="in_end_date")
             with col_e_time:
-                # 📌 FIX: เพิ่ม step=60 เพื่อให้ตั้งเวลาได้ละเอียดถึง 1 นาที
+                # 📌 FIX: เพิ่ม step=60
                 end_time = st.time_input("เวลาสิ้นสุด", value=end_time_val, key="in_end_time", step=60)
-            with col_e_clear:
-                st.write("") # Spacer
-                st.write("") # Spacer
-                if st.button("ล้างเวลาสิ้นสุด", key="btn_clear_end"):
-                    st.session_state.clear_end_triggered = True
-                    st.rerun()
-
+            
             st.divider()
+            
+            # 📌 st.form_submit_button ต้องอยู่ภายใน st.form เสมอ
             submit_window = st.form_submit_button("บันทึกช่วงเวลาสอบ", type="primary", use_container_width=True)
 
-        # 📌 Logic หลังจาก Form ถูก Submit หรือปุ่ม Clear ถูกกด
-        if submit_window or st.session_state.clear_start_triggered or st.session_state.clear_end_triggered:
+        # ------------------ Clear Buttons (ย้ายออกนอก Form) -------------------
+        # การย้ายปุ่ม Clear ออกนอกฟอร์มทำให้เราสามารถ Rerun ได้โดยไม่ขัดขวาง st.form_submit_button
+        col_clear_s, col_clear_e = st.columns(2)
+        with col_clear_s:
+            if st.button("ล้างเวลาเริ่มต้น", key="btn_clear_start_outside", use_container_width=True):
+                st.session_state.clear_start_triggered = True
+                st.session_state.submit_after_clear = True # ใช้สถานะนี้แทนการ Rerun ทันที
+                st.rerun() # Rerun เพื่อให้ค่า default_start_ict ถูกตั้งเป็น None
+        with col_clear_e:
+            if st.button("ล้างเวลาสิ้นสุด", key="btn_clear_end_outside", use_container_width=True):
+                st.session_state.clear_end_triggered = True
+                st.session_state.submit_after_clear = True # ใช้สถานะนี้แทนการ Rerun ทันที
+                st.rerun() # Rerun เพื่อให้ค่า default_end_ict ถูกตั้งเป็น None
+        
+        # ------------------ Submit Logic -------------------
+        # ตรวจสอบว่าถูก Submit โดยปุ่มฟอร์ม หรือถูก Rerun จากปุ่ม Clear
+        is_submitted = submit_window or st.session_state.get('submit_after_clear', False)
+
+        if is_submitted:
             
             # 1. จัดการการล้างเวลา
-            # ถ้าปุ่ม Clear ถูกกดในรอบที่แล้ว (clear_triggered เป็น True ในรอบนี้)
-            # เราจะ override ค่าที่มาจาก form inputs ให้เป็น None
             final_start_date, final_start_time = start_date, start_time
             final_end_date, final_end_time = end_date, end_time
             
+            # Override ค่าจาก form inputs ให้เป็น None หากปุ่ม Clear ถูกกด
             if st.session_state.clear_start_triggered:
                 final_start_date, final_start_time = None, None
                 st.session_state.clear_start_triggered = False # Reset state
@@ -524,14 +531,16 @@ def page_dashboard():
                 final_end_date, final_end_time = None, None
                 st.session_state.clear_end_triggered = False # Reset state
 
-            # 2. แปลงเป็น UTC ISO String เพื่อส่งไป GAS (ใช้ final_... ที่ผ่านการตรวจสอบ Clear แล้ว)
-            # ต้องมั่นใจว่า ict_to_utc_iso ถูกนิยามไว้และรองรับ None (คืนค่า "")
+            st.session_state.submit_after_clear = False # Reset state for next clear action
+
+            # 2. แปลงเป็น UTC ISO String เพื่อส่งไป GAS
             start_utc_iso = ict_to_utc_iso(final_start_date, final_start_time) 
             end_utc_iso = ict_to_utc_iso(final_end_date, final_end_time) 
 
-            # ตรวจสอบความถูกต้องเฉพาะเมื่อมีการกำหนดช่วงเวลาทั้งคู่
+            # ตรวจสอบความถูกต้อง
             if start_utc_iso and end_utc_iso and start_utc_iso >= end_utc_iso:
                 st.error("เวลาเริ่มต้นต้องอยู่ก่อนเวลาสิ้นสุด")
+                # ไม่ต้อง Rerun ที่นี่ ให้ผู้ใช้แก้ไข
             else:
                 # 3. เรียก GAS Endpoint 
                 with st.spinner("กำลังบันทึกช่วงเวลา..."):
@@ -557,6 +566,7 @@ def page_dashboard():
                             
                     except Exception as e:
                         st.error(f"บันทึกล้มเหลว: {e}")
+        
         st.divider()
         # ------------------- 📌 END NEW FEATURE -------------------
         
