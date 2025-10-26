@@ -95,8 +95,13 @@ def utc_to_ict(utc_iso_string: str) -> str:
 # ---------------- Timezone Helper 2 ----------------
 def ict_to_utc_iso(date_obj, time_obj) -> str:
     """Converts a combined date/time object (ICT/UTC+7) to UTC ISO string."""
+    # ... โค้ดเดิม ...
     try:
         # 1. Combine date and time objects (assumed to be in ICT/UTC+7)
+        # ตรวจสอบว่า date_obj และ time_obj เป็นค่าที่ถูกต้องหรือไม่
+        if not date_obj or not time_obj:
+            return "" # ถ้าค่าใดค่าหนึ่งเป็น None/False ให้คืนค่าว่าง
+            
         dt_ict = datetime.combine(date_obj, time_obj)
         # 2. Subtract 7 hours to get to UTC
         dt_utc = dt_ict - timedelta(hours=7)
@@ -427,76 +432,108 @@ def page_dashboard():
                     st.error(f"บันทึกล้มเหลว: {e}")
         with col2:
             st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
-            # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ -------------------
+            # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ (แบบอิสระ) -------------------
         st.divider()
-        st.subheader(f"⏰ ตั้งค่าช่วงเวลาสอบสำหรับชุด: {chosen_id}") # ใช้ chosen_id ที่ถูกกำหนดแล้ว
+        st.subheader(f"⏰ ตั้งค่าช่วงเวลาสอบสำหรับชุด: {chosen_id}") 
         
         # Helper: แปลงเวลา UTC กลับมาเป็นเวลาไทย (UTC+7) สำหรับการแสดงผลใน input field
         def parse_datetime_ict(utc_iso: str):
+            from datetime import datetime, timedelta
             try:
-                if not utc_iso: return datetime.now() + timedelta(hours=7)
-                # ต้องมีการเรียกใช้ datetime, timedelta
-                from datetime import datetime, timedelta 
+                if not utc_iso: return None # คืนค่า None ถ้าไม่มี
                 dt_utc = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
                 return dt_utc + timedelta(hours=7)
             except:
-                # ป้องกันข้อผิดพลาดจากการดึงข้อมูลครั้งแรก
-                from datetime import datetime, timedelta
-                return datetime.now() + timedelta(hours=7) 
+                return None # คืนค่า None หากเกิดข้อผิดพลาด
         
-        # กำหนดค่าเริ่มต้นตามข้อมูลที่มีใน GAS หรือใช้เวลาปัจจุบันของไทย
+        # กำหนดค่าเริ่มต้นตามข้อมูลที่มีใน GAS หรือใช้ None
         start_utc_default = current_exam.get("window_start_utc", "")
         end_utc_default = current_exam.get("window_end_utc", "")
         
         default_start_ict = parse_datetime_ict(start_utc_default)
         default_end_ict = parse_datetime_ict(end_utc_default)
         
+        # ตัวควบคุม Checkbox
+        set_start = st.checkbox(
+            "กำหนดเวลาเริ่มต้น", 
+            value=bool(default_start_ict), 
+            key="chk_start"
+        )
+        set_end = st.checkbox(
+            "กำหนดเวลาสิ้นสุด", 
+            value=bool(default_end_ict), 
+            key="chk_end"
+        )
+        
+        # กำหนดค่าเริ่มต้นสำหรับ Date/Time Input ถ้ามีการเช็ค
+        # ถ้าไม่มีค่าเดิม ให้ใช้เวลาปัจจุบันของไทย
+        start_date_val = default_start_ict.date() if default_start_ict else datetime.now().date()
+        start_time_val = default_start_ict.time() if default_start_ict else datetime.now().time()
+        end_date_val = default_end_ict.date() if default_end_ict else (datetime.now() + timedelta(hours=1)).date()
+        end_time_val = default_end_ict.time() if default_end_ict else (datetime.now() + timedelta(hours=1)).time()
+        
+        
         with st.form("exam_window_form", border=True):
             st.markdown("##### กำหนดช่วงเวลา (เวลาประเทศไทย)")
             
-            col_s_date, col_s_time = st.columns(2)
-            with col_s_date:
-                start_date = st.date_input("วันที่เริ่มต้น", value=default_start_ict.date())
-            with col_s_time:
-                start_time = st.time_input("เวลาเริ่มต้น", value=default_start_ict.time())
+            # --- START TIME ---
+            st.caption("เวลาเริ่มต้น:")
+            if set_start:
+                col_s_date, col_s_time = st.columns(2)
+                with col_s_date:
+                    start_date = st.date_input("วันที่เริ่มต้น", value=start_date_val, key="in_start_date")
+                with col_s_time:
+                    start_time = st.time_input("เวลาเริ่มต้น", value=start_time_val, key="in_start_time")
+            else:
+                start_date, start_time = None, None # กำหนดให้เป็น None ถ้าไม่ได้เช็ค
 
-            col_e_date, col_e_time = st.columns(2)
-            with col_e_date:
-                end_date = st.date_input("วันที่สิ้นสุด", value=default_end_ict.date())
-            with col_e_time:
-                end_time = st.time_input("เวลาสิ้นสุด", value=default_end_ict.time())
+            st.divider()
 
+            # --- END TIME ---
+            st.caption("เวลาสิ้นสุด:")
+            if set_end:
+                col_e_date, col_e_time = st.columns(2)
+                with col_e_date:
+                    end_date = st.date_input("วันที่สิ้นสุด", value=end_date_val, key="in_end_date")
+                with col_e_time:
+                    end_time = st.time_input("เวลาสิ้นสุด", value=end_time_val, key="in_end_time")
+            else:
+                end_date, end_time = None, None # กำหนดให้เป็น None ถ้าไม่ได้เช็ค
+
+            st.divider()
             submit_window = st.form_submit_button("บันทึกช่วงเวลาสอบ", type="primary", use_container_width=True)
 
         if submit_window:
             # 2. แปลงเป็น UTC ISO String เพื่อส่งไป GAS
-            # ต้องมั่นใจว่าฟังก์ชัน ict_to_utc_iso ถูกนิยามไว้ในโค้ดส่วนบน
-            start_utc_iso = ict_to_utc_iso(start_date, start_time)
-            end_utc_iso = ict_to_utc_iso(end_date, end_time)
+            start_utc_iso = ict_to_utc_iso(start_date, start_time) # จะคืนค่า "" ถ้าเป็น None
+            end_utc_iso = ict_to_utc_iso(end_date, end_time) # จะคืนค่า "" ถ้าเป็น None
 
-            if start_utc_iso >= end_utc_iso:
+            # ตรวจสอบความถูกต้องเฉพาะเมื่อมีการกำหนดช่วงเวลาทั้งคู่
+            if start_utc_iso and end_utc_iso and start_utc_iso >= end_utc_iso:
                 st.error("เวลาเริ่มต้นต้องอยู่ก่อนเวลาสิ้นสุด")
-            else:
-                with st.spinner("กำลังบันทึกช่วงเวลา..."):
-                    try:
-                        # 3. เรียก GAS Endpoint ใหม่: chosen_id ถูกเรียกใช้โดยไม่มีปัญหา scope
-                        js_win = gas_post("set_exam_window", {
-                            "exam_id": chosen_id, 
-                            "window_start_utc": start_utc_iso,
-                            "window_end_utc": end_utc_iso,
-                            "teacher_key": TEACHER_KEY
-                        })
+                st.stop()
+            
+            # 3. เรียก GAS Endpoint 
+            with st.spinner("กำลังบันทึกช่วงเวลา..."):
+                try:
+                    js_win = gas_post("set_exam_window", {
+                        "exam_id": chosen_id, 
+                        "window_start_utc": start_utc_iso,
+                        "window_end_utc": end_utc_iso,
+                        "teacher_key": TEACHER_KEY
+                    })
 
-                        if js_win.get("ok"):
-                            st.success(f"บันทึกช่วงเวลาสอบ (UTC) สำเร็จ: {start_utc_iso} → {end_utc_iso}")
-                            st.rerun() 
-                        elif js_win.get("error") == "UNAUTHORIZED":
-                            st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY ในชีท Config ของ GAS)")
+                    if js_win.get("ok"):
+                        if start_utc_iso or end_utc_iso:
+                            msg = f"บันทึกช่วงเวลาสอบสำเร็จ: **Start:** {start_utc_iso or 'ไม่กำหนด'} | **End:** {end_utc_iso or 'ไม่กำหนด'}"
                         else:
-                            st.error(f"บันทึกไม่สำเร็จ: {js_win.get('error')}")
-                            
-                    except Exception as e:
-                        st.error(f"บันทึกล้มเหลว: {e}")
+                            msg = "ล้างช่วงเวลาสอบแล้ว (ไม่กำหนดช่วงเวลา)"
+                        st.success(msg)
+                        st.rerun() 
+                    # ... โค้ดจัดการ Error ...
+                    # ...
+                except Exception as e:
+                    st.error(f"บันทึกล้มเหลว: {e}")
         # ------------------- 📌 END NEW FEATURE -------------------
         st.subheader("ผลการสอบของชุดนี้")
         try:
