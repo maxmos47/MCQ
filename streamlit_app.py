@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-import matplotlip as mpl
+import matplotlib as mpl
 mpl._version_
 import textwrap
 import os, urllib.request
