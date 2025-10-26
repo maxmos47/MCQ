@@ -75,44 +75,46 @@ def page_exam():
     is_pending = ss["pending_submit_payload"] is not None
     disabled_all = ss["submitted"] or is_pending
 
-    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=disabled_all)
+  # === ใช้ st.form เพื่อไม่ให้ rerun ระหว่างเลือก ===
+form_disabled = disabled_all
+with st.form("exam_form", clear_on_submit=False):
+    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
 
     options = ["A", "B", "C", "D", "E"]
     if len(ss["answers"]) != qn:
         ss["answers"] = [""] * qn
 
     for i in range(qn):
-        ss["answers"][i] = st.radio(
+        current = ss["answers"][i]
+        choice = st.radio(
             f"ข้อ {i+1}",
             options=[""] + options,
-            index=([""] + options).index(ss["answers"][i]) if ss["answers"][i] in ([""] + options) else 0,
+            index=([""] + options).index(current) if current in ([""] + options) else 0,
             horizontal=True,
-            disabled=disabled_all,
-            key=f"q_{i+1}_radio",
+            disabled=form_disabled,
+            key=f"q_{i+1}_radio_form",
         )
+        ss["answers"][i] = choice
         st.divider()
 
-    def _arm_submit():
-        if not name.strip():
-            ss["submit_error"] = "กรุณากรอกชื่อ"
-            return
+    submitted_form = st.form_submit_button(
+        "ส่งคำตอบ",
+        type="primary",
+        use_container_width=True,
+        disabled=form_disabled,
+    )
+
+# ======= หลังปิดฟอร์ม =======
+if submitted_form and not ss["submitted"]:
+    if not name.strip():
+        ss["submit_error"] = "กรุณากรอกชื่อ"
+    else:
         ss["submit_error"] = None
         ss["pending_submit_payload"] = {
             "exam_id": exam_id,
             "student_name": name.strip(),
             "answers": ss["answers"],
         }
-
-    if not ss["submitted"]:
-        st.button(
-            "ส่งคำตอบ",
-            type="primary",
-            use_container_width=True,
-            disabled=disabled_all,
-            on_click=_arm_submit,
-        )
-    else:
-        st.button("ส่งคำตอบ (ล็อคแล้ว)", use_container_width=True, disabled=True)
 
     # ส่งจริงเมื่อ pending
     if ss["pending_submit_payload"] is not None:
