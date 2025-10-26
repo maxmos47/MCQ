@@ -11,7 +11,7 @@ st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="cent
 
 # ==== Thai font setup (Noto Sans Thai) ====
 try:
-    font_path = "/tmp/NotoSansThai-Regular.ttf"
+    font_path = "/NotoSansThai-Regular.ttf"
     if not os.path.exists(font_path):
         urllib.request.urlretrieve(
             "https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai-Regular.ttf",
