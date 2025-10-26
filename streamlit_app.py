@@ -323,36 +323,10 @@ def page_dashboard():
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
 
-            # === Item Analysis (เปอร์เซ็นต์ตอบถูกรายข้อ) ===
-            first_detail = df.iloc[0]["detail"] if "detail" in df.columns else None
-            qn_items = len(first_detail) if first_detail else 0
-            if qn_items > 0:
-                counts = [0] * qn_items
-                total = len(df)
-                for _, row in df.iterrows():
-                    ans = [s.strip().upper() for s in str(row.get("answers", "")).split(",")]
-                    for i in range(qn_items):
-                        if i < len(ans) and first_detail and ans[i] == first_detail[i]["correct"]:
-                            counts[i] += 1
-                perc = [round((c * 100) / total) if total > 0 else 0 for c in counts]
-                item_df = pd.DataFrame({"ข้อ": [i + 1 for i in range(qn_items)], "%ถูก": perc})
-                st.subheader("Item Analysis")
-                st.dataframe(item_df, hide_index=True, use_container_width=True)
+                        # === Item Analysis — ข้อไหนนักเรียนผิดเยอะ? ===
+            import json as _json
 
-                fig2, ax2 = plt.subplots(figsize=(10, 4.5))
-                ax2.plot(item_df["ข้อ"], item_df["%ถูก"], marker="o")
-                ax2.set_xlabel("ข้อ", fontsize=12)
-                ax2.set_ylabel("% ถูก", fontsize=12)
-                ax2.set_title(f"Item Difficulty • {chosen_id}", fontsize=14, pad=12)
-                ax2.set_ylim(0, 100)
-                ax2.tick_params(axis="both", labelsize=12)
-                for x, y in zip(item_df["ข้อ"], item_df["%ถูก"]):
-                    ax2.text(x, y + 2, f"{y}%", ha="center", fontsize=10)
-                plt.tight_layout()
-                st.pyplot(fig2, use_container_width=True)
-
-            # ===== Item Analysis: ข้อไหนเด็กผิดเยอะ? =====
-            # แปลง detail ให้เป็น list เสมอ + หา qn (จำนวนข้อ)
+            # 1) แปลง detail แต่ละแถวให้เป็น list เสมอ + หา qn (จำนวนข้อ)
             details = []
             qn_items = 0
             if "detail" in df.columns:
@@ -373,7 +347,8 @@ def page_dashboard():
             else:
                 total = len(details)
                 correct_counts = [0] * qn_items
-                # นับจำนวนตอบถูกต่อข้อ
+
+                # 2) นับจำนวนตอบถูกต่อข้อ (อิง field is_correct ใน detail)
                 for d in details:
                     for i in range(qn_items):
                         if i < len(d):
@@ -381,16 +356,15 @@ def page_dashboard():
                             ok = False
                             if isinstance(item, dict):
                                 ok = bool(item.get("is_correct"))
-                            # เผื่อรูปแบบอื่นในอนาคต
                             elif isinstance(item, (list, tuple)) and len(item) >= 1:
-                                ok = bool(item[0])
+                                ok = bool(item[0])  # กันรูปแบบอนาคต
                             if ok:
                                 correct_counts[i] += 1
 
                 wrong_counts = [total - c for c in correct_counts]
                 perc_correct = [round((c * 100) / total) if total > 0 else 0 for c in correct_counts]
 
-                # ตารางสรุป
+                # 3) ตารางสรุป
                 item_df = pd.DataFrame({
                     "ข้อ": [i + 1 for i in range(qn_items)],
                     "ถูก(คน)": correct_counts,
@@ -401,9 +375,9 @@ def page_dashboard():
                 st.subheader("📌 Item Analysis — สรุปการตอบถูกรายข้อ")
                 st.dataframe(item_df, hide_index=True, use_container_width=True)
 
-                # ===== กราฟ 1: % ถูก ต่อข้อ (เรียงจากต่ำ→สูง เพื่อเห็นข้อที่ผิดเยอะอยู่บนสุด) =====
+                # 4) กราฟ 1: % ถูก ต่อข้อ (เรียงจากต่ำ→สูง เพื่อเห็นข้อที่ผิดเยอะอยู่บนสุด)
                 plot1 = item_df.sort_values("%ถูก", ascending=True)
-                fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.5 * len(plot1))))
+                fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot1))))
                 ax1.barh(plot1["ข้อ"].astype(str), plot1["%ถูก"])
                 ax1.set_xlabel("% ถูก", fontsize=12)
                 ax1.set_ylabel("ข้อ", fontsize=12)
@@ -414,9 +388,9 @@ def page_dashboard():
                 plt.tight_layout()
                 st.pyplot(fig1, use_container_width=True)
 
-                # ===== กราฟ 2: ซ้อน Correct/Wrong ต่อข้อ (ภาพรวม) =====
-                plot2 = item_df.copy()  # ไม่ต้องเรียง เพื่อคงลำดับข้อ 1..n
-                fig2, ax2 = plt.subplots(figsize=(10, max(3.5, 0.5 * len(plot2))))
+                # 5) กราฟ 2: ซ้อน Correct/Wrong ต่อข้อ (ภาพรวม)
+                plot2 = item_df.copy()  # คงลำดับข้อ 1..n
+                fig2, ax2 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot2))))
                 y = plot2["ข้อ"].astype(str)
                 ax2.barh(y, plot2["ผิด(คน)"], label="Wrong")
                 ax2.barh(y, plot2["ถูก(คน)"], left=plot2["ผิด(คน)"], label="Correct")
@@ -427,12 +401,9 @@ def page_dashboard():
                 plt.tight_layout()
                 st.pyplot(fig2, use_container_width=True)
 
-                # ข้อที่ผิดเยอะที่สุด (ช่วยสรุป)
+                # 6) ช่วยสรุป: ข้อที่ผิดเยอะที่สุด
                 hardest = plot1.iloc[0]
                 st.caption(f"🔎 ข้อที่นักเรียนผิดเยอะที่สุด: ข้อ {hardest['ข้อ']} (ถูก {hardest['%ถูก']}%)")
-
-        except Exception as e:
-                st.error(f"โหลดข้อมูลล้มเหลว: {e}")
 
 # ---------------- Run ----------------
 if mode == "dashboard":
