@@ -86,19 +86,22 @@ def page_exam():
     end_ts = ss[timer_key]
     remaining_sec = max(0, int(end_ts - time.time()))
 
-    # 3.1) รีรัน "ครั้งเดียว" ตอนถึงเดดไลน์ (ไม่กวนตอนพิมพ์/กดปุ่ม)
+    # 3.1) เปิด autorefresh แค่ช่วง 5 วินาทีสุดท้าย (กัน throttle / ไม่กวนตอนพิมพ์)
     is_pending = ss.get("pending_submit_payload") is not None
-    want_autorefresh_once = (
+    want_autorefresh_tail = (
         (not ss.get("submitted", False)) and
         (not is_pending) and
-        (not ss.get("suppress_autorefresh", False))
+        (not ss.get("suppress_autorefresh", False)) and
+        (remaining_sec > 0) and
+        (remaining_sec <= 5)          # ✅ เปิดเฉพาะ 5 วิสุดท้าย
     )
-    remaining_ms = max(0, int((end_ts - time.time()) * 1000))
-    if want_autorefresh_once and remaining_ms > 0:
+
+    if want_autorefresh_tail:
+        # รีรันทุก 1 วิ ในโค้งสุดท้ายเท่านั้น เพื่อให้ถึง 00:00 แล้วเข้า autosubmit แน่ ๆ
         st_autorefresh(
-            interval=remaining_ms,
-            limit=1,
-            key=f"autorefresh-once-{exam_id}-{int(end_ts)}",
+            interval=1000,            # 1 วินาที
+            limit=remaining_sec,      # หยุดเองเมื่อถึงศูนย์
+            key=f"autorefresh-tail-{exam_id}-{int(end_ts)}",
         )
 
     # 3.2) แสดง countdown แบบ client-side
