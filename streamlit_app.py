@@ -59,13 +59,38 @@ if isinstance(raw_mode, list) and raw_mode:
 mode = str(raw_mode).strip().lower()
 
 # ====================== Student Page ======================
+# ====================== Student Page (Mode A: Fixed Window Time) ======================
+from datetime import datetime, timezone
+
+def is_within_window(start_utc: str, end_utc: str) -> tuple[bool, str]:
+    """
+    ตรวจสอบว่าขณะนี้อยู่ในช่วงเวลาสอบหรือไม่
+    คืนค่า (True/False, message)
+    """
+    try:
+        if not start_utc or not end_utc:
+            return True, "ไม่จำกัดเวลา"
+
+        now = datetime.now(timezone.utc)
+        start = datetime.fromisoformat(start_utc.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(end_utc.replace("Z", "+00:00"))
+
+        if now < start:
+            return False, f"ยังไม่ถึงเวลาสอบ (เริ่ม {start_utc})"
+        if now > end:
+            return False, f"หมดเวลาทำข้อสอบแล้ว (สิ้นสุด {end_utc})"
+        return True, ""
+    except Exception as e:
+        return True, f"ไม่สามารถตรวจสอบเวลาได้ ({e})"
+
+
 def page_exam():
     st.markdown("### 📝 กระดาษคำตอบ MCQ (มือถือ) — ชุดข้อสอบที่อาจารย์กำหนด")
     if not GAS_WEBAPP_URL:
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
 
-    # 1) โหลดชุดข้อสอบที่กำลังใช้งาน
+    # ------------------ 1. โหลดชุดข้อสอบ ------------------
     try:
         js = gas_get("get_active_exam")
         if not js.get("ok"):
@@ -77,23 +102,37 @@ def page_exam():
         st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
         return
 
+    # ------------------ 2. แสดงข้อมูลชุดสอบ ------------------
     qn = int(exam.get("question_count", 0))
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    # 2) Session state (เรียบง่าย ไม่มีตัวจับเวลา)
+    # ------------------ 3. ตรวจสอบช่วงเวลา ------------------
+    time_mode = exam.get("time_mode", "")
+    window_start = exam.get("window_start_utc", "")
+    window_end = exam.get("window_end_utc", "")
+    ok_time, msg_time = is_within_window(window_start, window_end)
+
+    if time_mode == "fixed_window" and not ok_time:
+        st.error(f"⏰ {msg_time}")
+        st.info(f"ช่วงเวลาสอบ (UTC): {window_start} → {window_end}")
+        return
+    elif time_mode == "fixed_window":
+        st.caption(f"🕒 ช่วงเวลาสอบ (UTC): {window_start} → {window_end}")
+
+    # ------------------ 4. Session State ------------------
     ss = st.session_state
-    ss.setdefault("submitted", False)                # ล็อคถาวรหลังส่งสำเร็จ
-    ss.setdefault("pending_submit_payload", None)    # ใช้ล็อคตอนกำลังส่ง
+    ss.setdefault("submitted", False)
+    ss.setdefault("pending_submit_payload", None)
     ss.setdefault("submit_result", None)
     ss.setdefault("submit_error", None)
     ss.setdefault("answers", [""] * qn)
 
-    # ถ้ามีผลลัพธ์แล้ว ให้ล็อคทันที
+    # ถ้ามีผลลัพธ์แล้วให้ล็อก
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
-    # 3) ฟอร์ม (ไม่ rerun ระหว่างเปลี่ยน radio)
+    # ------------------ 5. สร้าง Form คำตอบ ------------------
     is_pending = ss["pending_submit_payload"] is not None
     disabled_all = ss["submitted"] or is_pending
 
@@ -109,7 +148,9 @@ def page_exam():
             choice = st.radio(
                 f"ข้อ {i+1}",
                 options=[""] + options,
-                index=([""] + options).index(current) if current in ([""] + options) else 0,
+                index=([""] + options).index(current)
+                if current in ([""] + options)
+                else 0,
                 horizontal=True,
                 disabled=disabled_all,
                 key=f"q_{i+1}_radio_form",
@@ -124,7 +165,7 @@ def page_exam():
             disabled=disabled_all,
         )
 
-    # 4) เตรียม payload เมื่อกดส่ง
+    # ------------------ 6. เตรียม Payload เมื่อกดส่ง ------------------
     if submitted_form and not ss["submitted"]:
         if not name.strip():
             ss["submit_error"] = "กรุณากรอกชื่อ"
@@ -136,7 +177,7 @@ def page_exam():
                 "answers": ss["answers"],
             }
 
-    # 5) ส่งจริง → ล็อคทันที + spinner + rerun
+    # ------------------ 7. ส่งจริง → ล็อกทันที + spinner + rerun ------------------
     if ss["pending_submit_payload"] is not None:
         with st.spinner("กำลังส่งคำตอบ..."):
             try:
@@ -156,7 +197,7 @@ def page_exam():
                 ss["pending_submit_payload"] = None
         st.rerun()
 
-    # 6) แสดงผลลัพธ์/ข้อผิดพลาด
+    # ------------------ 8. แสดงผลลัพธ์ / ข้อผิดพลาด ------------------
     if ss["submit_error"]:
         st.error(ss["submit_error"])
 
