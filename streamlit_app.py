@@ -120,7 +120,7 @@ def page_dashboard():
         id_to_title = {e["exam_id"]: e["title"] for e in exams}
         options = [e["exam_id"] for e in exams]
         current_idx = options.index(active_id) if active_id in options else 0
-        new_idx = st.selectbox("เลือกชุดข้อสอบที่จะใช้งาน (Active)", options=list(range(len(options))), index=current_idx, format_func=lambda i: f\"{options[i]} — {id_to_title[options[i]]}\" )
+        new_idx = st.selectbox("เลือกชุดข้อสอบที่จะใช้งาน (Active)", options=list(range(len(options))), index=current_idx, format_func=lambda i: f"{options[i]} — {id_to_title[options[i]]}" )
         chosen_id = options[new_idx]
 
         col1, col2 = st.columns([1,1])
