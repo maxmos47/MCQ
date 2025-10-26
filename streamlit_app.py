@@ -429,17 +429,20 @@ def page_dashboard():
             st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
             # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ -------------------
         st.divider()
-        st.subheader(f"⏰ ตั้งค่าช่วงเวลาสอบสำหรับชุด: {chosen_id}")
+        st.subheader(f"⏰ ตั้งค่าช่วงเวลาสอบสำหรับชุด: {chosen_id}") # ใช้ chosen_id ที่ถูกกำหนดแล้ว
         
-        # 1. ดึงค่าเวลาเดิม (ถ้ามี)
-        # แปลงเวลา UTC กลับมาเป็นเวลาไทย (UTC+7) สำหรับการแสดงผลใน input field
+        # Helper: แปลงเวลา UTC กลับมาเป็นเวลาไทย (UTC+7) สำหรับการแสดงผลใน input field
         def parse_datetime_ict(utc_iso: str):
             try:
                 if not utc_iso: return datetime.now() + timedelta(hours=7)
+                # ต้องมีการเรียกใช้ datetime, timedelta
+                from datetime import datetime, timedelta 
                 dt_utc = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
                 return dt_utc + timedelta(hours=7)
             except:
-                return datetime.now() + timedelta(hours=7)
+                # ป้องกันข้อผิดพลาดจากการดึงข้อมูลครั้งแรก
+                from datetime import datetime, timedelta
+                return datetime.now() + timedelta(hours=7) 
         
         # กำหนดค่าเริ่มต้นตามข้อมูลที่มีใน GAS หรือใช้เวลาปัจจุบันของไทย
         start_utc_default = current_exam.get("window_start_utc", "")
@@ -467,6 +470,7 @@ def page_dashboard():
 
         if submit_window:
             # 2. แปลงเป็น UTC ISO String เพื่อส่งไป GAS
+            # ต้องมั่นใจว่าฟังก์ชัน ict_to_utc_iso ถูกนิยามไว้ในโค้ดส่วนบน
             start_utc_iso = ict_to_utc_iso(start_date, start_time)
             end_utc_iso = ict_to_utc_iso(end_date, end_time)
 
@@ -475,9 +479,9 @@ def page_dashboard():
             else:
                 with st.spinner("กำลังบันทึกช่วงเวลา..."):
                     try:
-                        # 3. เรียก GAS Endpoint ใหม่
+                        # 3. เรียก GAS Endpoint ใหม่: chosen_id ถูกเรียกใช้โดยไม่มีปัญหา scope
                         js_win = gas_post("set_exam_window", {
-                            "exam_id": chosen_id,
+                            "exam_id": chosen_id, 
                             "window_start_utc": start_utc_iso,
                             "window_end_utc": end_utc_iso,
                             "teacher_key": TEACHER_KEY
@@ -485,13 +489,11 @@ def page_dashboard():
 
                         if js_win.get("ok"):
                             st.success(f"บันทึกช่วงเวลาสอบ (UTC) สำเร็จ: {start_utc_iso} → {end_utc_iso}")
-                            # ต้อง Rerun เพื่อให้ข้อมูล default และหน้า Student อัปเดต
                             st.rerun() 
                         elif js_win.get("error") == "UNAUTHORIZED":
-                            st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY)")
+                            st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY ในชีท Config ของ GAS)")
                         else:
                             st.error(f"บันทึกไม่สำเร็จ: {js_win.get('error')}")
-                            st.json(js_win) # Debugging
                             
                     except Exception as e:
                         st.error(f"บันทึกล้มเหลว: {e}")
