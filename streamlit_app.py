@@ -24,119 +24,58 @@ def gas_post(action: str, payload: dict):
     r.raise_for_status()
     return r.json()
 
-# Robust query param
 raw_mode = st.query_params.get("mode", "exam")
 if isinstance(raw_mode, list) and raw_mode:
     raw_mode = raw_mode[0]
 mode = str(raw_mode).strip().lower()
 
-def fetch_exams():
-    try:
-        js = gas_get("get_config")
-        if js.get("ok"):
-            return js["data"]["exams"]
-        else:
-            st.error(js.get("error","Config error"))
-    except Exception as e:
-        st.error(f"โหลดรายการชุดข้อสอบล้มเหลว: {e}")
-    return []
-
-def fetch_exam(exam_id: str):
-    try:
-        js = gas_get("get_exam", {"exam_id": exam_id})
-        if js.get("ok"):
-            return js["data"]
-        else:
-            st.error(js.get("error","Exam error"))
-    except Exception as e:
-        st.error(f"โหลดข้อมูลชุดข้อสอบล้มเหลว: {e}")
-    return None
-
 def page_exam():
-    st.markdown("### 📝 กระดาษคำตอบ MCQ (มือถือ) — หลายชุดข้อสอบ")
+    st.markdown("### 📝 กระดาษคำตอบ MCQ (มือถือ) — ชุดข้อสอบที่อาจารย์กำหนด")
     if not GAS_WEBAPP_URL:
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
-
-    exams = fetch_exams()
-    if not exams:
-        st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
+    try:
+        js = gas_get("get_active_exam")
+        if not js.get("ok"):
+            st.error("ยังไม่ได้กำหนดชุดข้อสอบที่ใช้อยู่ (Active Exam)")
+            st.info("ให้อาจารย์ไปตั้งค่าที่หน้า Dashboard")
+            return
+        exam = js["data"]
+    except Exception as e:
+        st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
         return
 
-    # Select exam set
-    exam_titles = [f"{e['exam_id']} — {e['title']}" for e in exams]
-    idx = st.selectbox("เลือกชุดข้อสอบ", options=list(range(len(exams))), format_func=lambda i: exam_titles[i], index=0, disabled=st.session_state.get("submitted", False))
-    selected_exam = exams[idx]
-    exam_id = selected_exam["exam_id"]
-
-    # Load specific exam details
-    exam = fetch_exam(exam_id)
-    if not exam: return
     qn = int(exam.get("question_count",0))
-    correct = exam.get("correct_answers",[])
-
-    # Name & check duplicate status
-    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=st.session_state.get("submitted", False))
-    colA, colB = st.columns([1,1])
-    with colA:
-        if st.button("ตรวจสอบสิทธิ์ส่ง (เช็กว่าชื่อเคยส่งแล้วไหม)", disabled=st.session_state.get("submitted", False)):
-            if not name.strip():
-                st.warning("กรุณากรอกชื่อก่อนตรวจสอบ")
-            else:
-                try:
-                    chk = gas_get("check_submitted", {"exam_id": exam_id, "student_name": name.strip()})
-                    if chk.get("ok") and chk["data"]["submitted"]:
-                        st.session_state["submitted"] = True
-                        st.info("ชื่อผู้สอบนี้ได้ส่งคำตอบแล้วสำหรับชุดนี้ (ล็อคการส่งซ้ำ)")
-                    else:
-                        st.success("ยังไม่พบการส่งของชื่อนี้สำหรับชุดนี้ สามารถทำข้อสอบได้")
-                except Exception as e:
-                    st.error(f"ตรวจสอบล้มเหลว: {e}")
-    with colB:
-        if st.session_state.get("submitted", False):
-            st.button("ส่งคำตอบ (ปิดการส่งซ้ำแล้ว)", disabled=True)
-
+    exam_id = exam.get("exam_id","")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
-    options = ["A","B","C","D","E"]
 
-    # Init answers & lock flag
+    if "submitted" not in st.session_state: st.session_state["submitted"] = False
+    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=st.session_state["submitted"])
+
+    options = ["A","B","C","D","E"]
     if "answers" not in st.session_state or len(st.session_state["answers"])!=qn:
         st.session_state["answers"] = [""]*qn
-    if "submitted" not in st.session_state:
-        st.session_state["submitted"] = False
 
-    # Checkbox UI per question (mutually exclusive)
     for i in range(qn):
-        st.markdown(f"**ข้อ {i+1}**")
-        cols = st.columns(5, vertical_alignment="center")
-        current = st.session_state["answers"][i]
-        for j, label in enumerate(options):
-            key = f"q{i+1}_{label}"
-            checked = (current == label)
-            cols[j].checkbox(label, value=checked, key=key, disabled=st.session_state["submitted"])
-        # Enforce single choice
-        selected = None
-        for label in options:
-            if st.session_state.get(f"q{i+1}_{label}"):
-                selected = label if selected is None else selected
-        if selected is not None:
-            for label in options:
-                if label != selected and st.session_state.get(f"q{i+1}_{label}"):
-                    st.session_state[f"q{i+1}_{label}"] = False
-        st.session_state["answers"][i] = selected or ""
+        st.session_state["answers"][i] = st.radio(
+            f"ข้อ {i+1}",
+            options=[""]+options,
+            index=([""]+options).index(st.session_state["answers"][i]) if st.session_state["answers"][i] in ([""]+options) else 0,
+            horizontal=True,
+            disabled=st.session_state["submitted"],
+            key=f"q_{i+1}_radio"
+        )
         st.divider()
 
-    # Submit (server-side duplicate lock by (exam_id, name))
-    submit_disabled = st.session_state.get("submitted", False)
-    if st.button("ส่งคำตอบ", type="primary", use_container_width=True, disabled=submit_disabled):
+    if st.button("ส่งคำตอบ", type="primary", use_container_width=True, disabled=st.session_state["submitted"]):
         if not name.strip():
             st.warning("กรุณากรอกชื่อ")
             return
         try:
-            js = gas_post("submit", {"exam_id": exam_id, "student_name": name.strip(), "answers": st.session_state["answers"]})
-            if js.get("ok"):
-                res = js["data"]
+            js2 = gas_post("submit", {"exam_id": exam_id, "student_name": name.strip(), "answers": st.session_state["answers"]})
+            if js2.get("ok"):
                 st.session_state["submitted"] = True
+                res = js2["data"]
                 st.success(f"ส่งคำตอบสำเร็จ ✅ ได้คะแนน {res['score']} / {qn} ({res['percent']}%)")
                 with st.expander("ดูเฉลยรายข้อ / ผลลัพธ์"):
                     df = pd.DataFrame(res["detail"])
@@ -145,16 +84,16 @@ def page_exam():
                     df.columns = ["ข้อ","คำตอบ","เฉลย","สถานะ"]
                     st.dataframe(df, hide_index=True, use_container_width=True)
             else:
-                if js.get("error")=="DUPLICATE_SUBMISSION":
+                if js2.get("error")=="DUPLICATE_SUBMISSION":
                     st.session_state["submitted"] = True
                     st.info("ชื่อผู้สอบนี้ได้ส่งคำตอบแล้วสำหรับชุดนี้ (ระบบล็อคการส่งซ้ำ)")
                 else:
-                    st.error(f"ส่งคำตอบไม่สำเร็จ: {js.get('error')}")
+                    st.error(f"ส่งคำตอบไม่สำเร็จ: {js2.get('error')}")
         except Exception as e:
             st.error(f"ส่งคำตอบล้มเหลว: {e}")
 
 def page_dashboard():
-    st.markdown("### 👩‍🏫 Dashboard อาจารย์ (แยกตามชุดข้อสอบ)")
+    st.markdown("### 👩‍🏫 Dashboard อาจารย์ — ตั้งค่า Active Exam และดูผล")
     if not TEACHER_KEY:
         st.error("ยังไม่ได้ตั้งค่ารหัสผ่านอาจารย์ใน Secrets (app.teacher_key)")
         return
@@ -164,22 +103,49 @@ def page_dashboard():
             st.error("รหัสผ่านไม่ถูกต้อง")
             return
         st.success("เข้าสู่ระบบแล้ว ✅")
-
-        exams = fetch_exams()
+        try:
+            cfg = gas_get("get_config")
+            if not cfg.get("ok"):
+                st.error(cfg.get("error","Config error"))
+                return
+            exams = cfg["data"]["exams"]
+            active_id = cfg["data"].get("active_exam_id","")
+        except Exception as e:
+            st.error(f"โหลดข้อมูลล้มเหลว: {e}")
+            return
         if not exams:
             st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
             return
-        exam_titles = [f"{e['exam_id']} — {e['title']}" for e in exams]
-        idx = st.selectbox("เลือกชุดข้อสอบที่ต้องการดูผล", options=list(range(len(exams))), format_func=lambda i: exam_titles[i], index=0)
-        exam_id = exams[idx]["exam_id"]
-        st.caption(f"กำลังแสดงผลของชุด: {exam_id}")
 
+        id_to_title = {e["exam_id"]: e["title"] for e in exams}
+        options = [e["exam_id"] for e in exams]
+        current_idx = options.index(active_id) if active_id in options else 0
+        new_idx = st.selectbox("เลือกชุดข้อสอบที่จะใช้งาน (Active)", options=list(range(len(options))), index=current_idx, format_func=lambda i: f\"{options[i]} — {id_to_title[options[i]]}\" )
+        chosen_id = options[new_idx]
+
+        col1, col2 = st.columns([1,1])
+        with col1:
+            if st.button("บันทึกให้เป็น Active Exam", type="primary", use_container_width=True):
+                try:
+                    js = gas_post("set_active_exam", {"exam_id": chosen_id, "teacher_key": TEACHER_KEY})
+                    if js.get("ok"):
+                        st.success(f"ตั้งค่า Active Exam เป็น {chosen_id} เรียบร้อย")
+                    elif js.get("error")=="UNAUTHORIZED":
+                        st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY ในชีท Config ของ GAS)")
+                    else:
+                        st.error(f"บันทึกไม่สำเร็จ: {js.get('error')}")
+                except Exception as e:
+                    st.error(f"บันทึกล้มเหลว: {e}")
+        with col2:
+            st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
+
+        st.subheader("ผลการสอบของชุดนี้")
         try:
-            js = gas_get("get_dashboard", {"exam_id": exam_id})
-            if not js.get("ok"):
-                st.error(js.get("error","Unknown error"))
+            jsr = gas_get("get_dashboard", {"exam_id": chosen_id})
+            if not jsr.get("ok"):
+                st.error(jsr.get("error","Unknown error"))
                 return
-            records = js["data"]
+            records = jsr["data"]
             if not records:
                 st.info("ยังไม่มีคำตอบของชุดนี้")
                 return
@@ -205,10 +171,9 @@ def page_dashboard():
             plt.bar(df["student_name"], df["percent"])
             plt.xticks(rotation=45, ha="right")
             plt.ylabel("Percent")
-            plt.title(f"คะแนน (%) ต่อคน • {exam_id}")
+            plt.title(f"คะแนน (%) ต่อคน • {chosen_id}")
             st.pyplot(fig, use_container_width=True)
 
-            # Build correct answers from first record detail (they all same per exam)
             first_detail = df.iloc[0]["detail"] if "detail" in df.columns else None
             qn = len(first_detail) if first_detail else 0
             if qn>0:
@@ -228,7 +193,7 @@ def page_dashboard():
                 plt.plot(item_df["ข้อ"], item_df["%ถูก"], marker="o")
                 plt.xlabel("ข้อ")
                 plt.ylabel("% ถูก")
-                plt.title(f"Item Difficulty • {exam_id}")
+                plt.title(f"Item Difficulty • {chosen_id}")
                 st.pyplot(fig2, use_container_width=True)
 
         except Exception as e:
