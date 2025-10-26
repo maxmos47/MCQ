@@ -73,6 +73,7 @@ def page_exam():
     ss.setdefault("answers", [""] * qn)          # ให้มีความยาวเท่าจำนวนข้อ
     ss.setdefault("auto_name", "")               # เก็บชื่อไว้ใช้ตอน auto-submit
     ss.setdefault("auto_submit_done", False)     # กันยิงซ้ำตอนหมดเวลา
+    ss["auto_name"] = name.strip()
 
     # 3) ตัวจับเวลา (หลังรู้ exam_id แล้ว)
     DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))
@@ -83,8 +84,12 @@ def page_exam():
     remaining_sec = max(0, int(end_ts - time.time()))
 
     # 🔁 ให้เซิร์ฟเวอร์ rerun ทุก 1 วินาทีระหว่างยังมีเวลาอยู่
-    if not ss.get("submitted", False) and remaining_sec > 0:
-        st_autorefresh(interval=1000, key=f"auto-refresh-{exam_id}")
+    if (not ss.get("submitted", False)) and (remaining_sec > 0):
+        st_autorefresh(
+            interval=1000,                  # ทุก 1 วินาที
+            limit=remaining_sec,            # หยุดเองเมื่อครบวินาทีที่เหลือ
+            key=f"autorefresh-{exam_id}-{int(end_ts)}",  # key ยูนีคต่อชุด/รอบสอบ
+        )
 
     # 4) แสดง countdown แบบ client-side (ไม่ทำให้หน้ามืด)
     components.html(f"""
