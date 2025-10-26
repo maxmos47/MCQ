@@ -9,6 +9,7 @@ import textwrap
 import os
 import urllib.request
 import json as _json
+from collections import Counter, defaultdict
 
 # ---------------- Fonts (Thai) ----------------
 # พยายามใช้ TH Sarabun New ถ้ามีไฟล์ในโปรเจกต์ (เช่น thsarabunnew-webfont.ttf)
@@ -322,8 +323,7 @@ def page_dashboard():
                 ax.text(v + 1, i, f"{int(v)}%", va="center", fontsize=11)
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True)
-
-                from collections import Counter, defaultdict
+                
                 # 0) เตรียม answers ของนักเรียนเป็น list[list[str]]
                 answers_lists = []
                 if "answers" in df.columns:
