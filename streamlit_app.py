@@ -241,6 +241,7 @@ def page_dashboard():
 
             # === กราฟคะแนนอ่านง่าย (แนวนอน) ===
             ensure_thai_font() 
+            
             plot_df = df[["student_name", "percent"]].copy()
             plot_df["student_name"] = plot_df["student_name"].astype(str).str.strip()
             def wrap_label(s, width=10):
