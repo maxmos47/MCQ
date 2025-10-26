@@ -86,24 +86,9 @@ def page_exam():
     end_ts = ss[timer_key]
     remaining_sec = max(0, int(end_ts - time.time()))
 
-    # 3.1) เปิด autorefresh เฉพาะช่วง 7 วินาทีสุดท้าย (กัน throttle / ไม่กวนตอนพิมพ์)
-    is_pending = ss.get("pending_submit_payload") is not None
-    TAIL_SECONDS = 10
-    want_autorefresh_tail = (
-        (not ss.get("submitted", False)) and
-        (not is_pending) and
-        (not ss.get("suppress_autorefresh", False)) and
-        (remaining_sec > 0) and
-        (remaining_sec <= TAIL_SECONDS)
-    )
-    if want_autorefresh_tail:
-        st_autorefresh(
-            interval=1000,                # 1 วิ
-            limit=remaining_sec,
-            key=f"autorefresh-tail-{exam_id}-{int(end_ts)}",
-        )
-
-    # 3.2) แสดง countdown แบบ client-side
+    # 3.1) แสดง countdown และ "รีโหลดหน้าแอปเพียงครั้งเดียวเมื่อถึง 0:00"
+    # ใช้ sessionStorage เป็นตัวกันวนลูป reload ต่อเนื่อง
+    unique_flag = f"timeup-reloaded-{exam_id}-{int(end_ts)}"
     components.html(f"""
     <div style="font-size:1.1rem;font-weight:600;margin:0.25rem 0;">
       ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
@@ -111,6 +96,8 @@ def page_exam():
     <script>
       const end = {int(end_ts*1000)};
       const t = document.getElementById('t');
+      const flagKey = "{unique_flag}";
+
       function pad(n){{return n.toString().padStart(2,'0');}}
       function tick(){{
         const now = Date.now();
@@ -118,13 +105,29 @@ def page_exam():
         const m = Math.floor(s/60);
         const ss = s % 60;
         t.textContent = `${{pad(m)}}:${{pad(ss)}}`;
-      }}
-      tick(); setInterval(tick, 250);
-    </script>
-    """, height=40)
 
-    # 3.3) หมดเวลา → บังคับส่งอัตโนมัติ
-    if remaining_sec == 0 and (not ss.get("submitted", False)) and (not ss["auto_submit_done"]):
+        if (s <= 0) {{
+          // reload เพียงครั้งเดียว ด้วย query param &timeup=1
+          if (!sessionStorage.getItem(flagKey)) {{
+            sessionStorage.setItem(flagKey, '1');
+            const url = new URL(window.location.href);
+            url.searchParams.set('timeup', '1');
+            url.searchParams.set('ts', String(Date.now()));
+            window.location.replace(url.toString());
+          }}
+        }}
+      }}
+      tick();
+      setInterval(tick, 250);
+    </script>
+    "", height=40)
+
+    # 3.2) ถ้าหมดเวลา → บังคับส่งอัตโนมัติ (ยิงครั้งเดียว)
+    # เงื่อนไข: remaining_sec == 0 หรือมีพารามิเตอร์ timeup=1 จากการรีโหลด
+    timeup_flag = st.query_params.get("timeup", "0")
+    is_timeup = (remaining_sec == 0) or (str(timeup_flag).strip() == "1")
+
+    if is_timeup and (not ss.get("submitted", False)) and (not ss["auto_submit_done"]):
         ss["suppress_autorefresh"] = True
         st.warning("⏰ หมดเวลาทำข้อสอบ ระบบกำลังส่งคำตอบให้อัตโนมัติ…")
         payload = {
@@ -144,12 +147,21 @@ def page_exam():
             ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
         finally:
             ss["auto_submit_done"] = True
+            # เคลียร์พารามิเตอร์ timeup ออก เพื่อไม่ให้กระตุ้นซ้ำในครั้งถัดไป
+            try:
+                qp = dict(st.query_params)
+                if "timeup" in qp:
+                    del qp["timeup"]
+                st.query_params.update(qp)
+            except Exception:
+                pass
         st.rerun()
 
     # 4) ควบคุมการปิด/เปิดอินพุต
+    is_pending = ss.get("pending_submit_payload") is not None
     disabled_all = ss["submitted"] or is_pending or (remaining_sec == 0)
 
-    # 5) ฟอร์ม
+    # 5) ฟอร์ม (ไม่ rerun ระหว่างเลือก radio)
     form_disabled = disabled_all
     with st.form("exam_form", clear_on_submit=False):
         name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
@@ -181,7 +193,7 @@ def page_exam():
 
     # 6) เตรียม payload เมื่อกดส่งปกติ
     if submitted_form and not ss["submitted"]:
-        ss["suppress_autorefresh"] = True
+        ss["suppress_autorefresh"] = True  # กันการ reload แทรกขณะส่ง
         if remaining_sec == 0:
             ss["submit_error"] = "หมดเวลาแล้ว ไม่สามารถส่งคำตอบได้"
             ss["suppress_autorefresh"] = False
@@ -230,7 +242,7 @@ def page_exam():
             df = df[["q", "ans", "correct", "status"]]
             df.columns = ["ข้อ", "คำตอบ", "เฉลย", "สถานะ"]
             st.dataframe(df, hide_index=True, use_container_width=True)
-            
+
 # ====================== Teacher Dashboard ======================
 def page_dashboard():
     st.markdown("### 👩‍🏫 Dashboard อาจารย์ — ตั้งค่า Active Exam และดูผล")
