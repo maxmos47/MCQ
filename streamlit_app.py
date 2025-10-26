@@ -42,12 +42,13 @@ def load_css():
             margin-bottom: 10px;
         }
         
-        /* 4. Make radio buttons more visually distinct */
+        /* 4. Make radio buttons more visually distinct (REDUCED PADDING) */
         div[data-testid*="stRadio"] label {
-            padding: 5px 10px;
+            padding: 4px 8px; /* ลด padding ด้านข้างจาก 10px เหลือ 8px */
             border-radius: 8px;
-            margin: 2px;
+            margin: 1px; /* ลด margin */
             transition: background-color 0.1s;
+            text-align: center;
         }
         /* Highlight selected option */
         div[data-testid*="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
@@ -61,17 +62,19 @@ def load_css():
             line-height: 1.4;
         }
 
-        /* 6. ENHANCEMENT: Force Radio Options to wrap/fit horizontally on mobile */
+        /* 6. ENHANCEMENT: Force Radio Options to fit horizontally (REDUCED GAP/FLEX) */
         /* Targets the container holding the radio options */
         div[data-testid*="stRadio"] > div {
-            display: flex; /* Ensure it uses flex layout */
-            flex-wrap: wrap; /* Allow wrapping onto the next line */
-            gap: 5px; /* Add slight space between options for better touch target */
+            display: flex;
+            flex-wrap: wrap; 
+            gap: 3px; /* ลดช่องว่างระหว่างตัวเลือกจาก 5px เหลือ 3px */
+            justify-content: space-between; /* กระจายพื้นที่ว่างระหว่างตัวเลือก */
         }
         /* Ensure each option is a flex item */
         div[data-testid*="stRadio"] label {
-            flex-grow: 0;
-            flex-shrink: 0;
+            flex-grow: 1; /* อนุญาตให้ขยายเล็กน้อยเพื่อเติมเต็มพื้นที่ */
+            flex-shrink: 1; /* อนุญาตให้หดตัวเล็กน้อย */
+            min-width: 0; /* ป้องกันการบังคับความกว้างขั้นต่ำ */
         }
         </style>
         """, unsafe_allow_html=True)
