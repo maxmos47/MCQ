@@ -231,7 +231,7 @@ def page_exam():
         
         # ใช้ Container เพื่อหุ้มข้อมูลเวลาให้โดดเด่น
         with st.container(border=True):
-            st.markdown("### ⏰ ช่วงเวลาสอบ)")
+            st.markdown("### ⏰ ช่วงเวลาสอบ")
             
             col_start, col_end = st.columns(2)
             
