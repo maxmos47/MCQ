@@ -78,7 +78,7 @@ def page_exam():
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
-    # 3) ตัวจับเวลา
+       # 3) ตัวจับเวลา
     DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))
     timer_key = f"timer_end_{exam_id}"
     if timer_key not in ss:
@@ -86,31 +86,54 @@ def page_exam():
     end_ts = ss[timer_key]
     remaining_sec = max(0, int(end_ts - time.time()))
 
-        # 3.1) Autorefresh แบบปรับเฟส (เบาบางช่วงแรก ถี่ขึ้นช่วงท้าย) + ไม่ทำงานระหว่างกำลังส่ง
+    # 3.1) แสดง countdown เสมอ (วางก่อน autorefresh เพื่อไม่ให้หาย)
+    unique_flag = f"timeup-reloaded-{exam_id}-{int(end_ts)}"
+    components.html(f"""
+    <div style='font-size:1.1rem;font-weight:600;margin:0.25rem 0;'>
+      ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
+    </div>
+    <script>
+      const end = {int(end_ts*1000)};
+      const t = document.getElementById("t");
+      const flagKey = "{unique_flag}";
+      function pad(n){{return n.toString().padStart(2,'0');}}
+      function tick() {{
+        const now = Date.now();
+        let s = Math.max(0, Math.floor((end - now)/1000));
+        const m = Math.floor(s/60);
+        const ss = s % 60;
+        t.textContent = pad(m)+":"+pad(ss);
+        if (s <= 0) {{
+          // reload ครั้งเดียวตอนหมดเวลา (กันลูปด้วย sessionStorage)
+          if (!sessionStorage.getItem(flagKey)) {{
+            sessionStorage.setItem(flagKey, '1');
+            const url = new URL(window.location.href);
+            url.searchParams.set('timeup','1');
+            url.searchParams.set('ts', Date.now().toString());
+            window.location.replace(url.toString());
+          }}
+        }}
+      }}
+      tick();
+      setInterval(tick, 250);
+    </script>
+    """, height=40)
+
+    # 3.2) Autorefresh แบบปรับเฟส (ต้องวาง "หลัง" countdown)
     is_pending = ss.get("pending_submit_payload") is not None
     suppress = ss.get("suppress_autorefresh", False)
     submitted = ss.get("submitted", False)
 
     want_refresh = (not submitted) and (not is_pending) and (not suppress) and (remaining_sec > 0)
-
     if want_refresh:
-        # ปรับเฟสตามเวลาเหลือ เพื่อลด overlay และกัน throttle
         if remaining_sec > 60:
-            interval_ms = 30000   # ทุก 30 วินาที (ช่วงยาว)
-            limit = max(1, remaining_sec // 30)
-            phase = "p30"
+            interval_ms, limit, phase = 30000, max(1, remaining_sec // 30), "p30"
         elif remaining_sec > 20:
-            interval_ms = 5000    # ทุก 5 วินาที (เข้าโค้ง)
-            limit = max(1, remaining_sec // 5)
-            phase = "p5"
+            interval_ms, limit, phase = 5000,  max(1, remaining_sec // 5),  "p5"
         elif remaining_sec > 5:
-            interval_ms = 2000    # ทุก 2 วินาที (ใกล้มาก)
-            limit = max(1, remaining_sec // 2)
-            phase = "p2"
+            interval_ms, limit, phase = 2000,  max(1, remaining_sec // 2),  "p2"
         else:
-            interval_ms = 1000    # วินาทีสุดท้าย เพื่อให้ถึง 0 แน่ ๆ
-            limit = remaining_sec
-            phase = "p1"
+            interval_ms, limit, phase = 1000,  remaining_sec,               "p1"
 
         st_autorefresh(
             interval=interval_ms,
@@ -118,12 +141,10 @@ def page_exam():
             key=f"ar-{exam_id}-{int(end_ts)}-{phase}",
         )
 
-    # 3.2) ถ้าหมดเวลา → บังคับส่งอัตโนมัติ (ยิงครั้งเดียว)
-    # เงื่อนไข: remaining_sec == 0 หรือมีพารามิเตอร์ timeup=1 จากการรีโหลด
+    # 3.3) หมดเวลา → บังคับส่งอัตโนมัติ (เหมือนเดิม)
     timeup_flag = st.query_params.get("timeup", "0")
     is_timeup = (remaining_sec == 0) or (str(timeup_flag).strip() == "1")
-
-    if is_timeup and (not ss.get("submitted", False)) and (not ss["auto_submit_done"]):
+    if is_timeup and (not ss.get("submitted", False)) and (not ss.get("auto_submit_done", False)):
         ss["suppress_autorefresh"] = True
         st.warning("⏰ หมดเวลาทำข้อสอบ ระบบกำลังส่งคำตอบให้อัตโนมัติ…")
         payload = {
@@ -143,7 +164,7 @@ def page_exam():
             ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
         finally:
             ss["auto_submit_done"] = True
-            # เคลียร์พารามิเตอร์ timeup ออก เพื่อไม่ให้กระตุ้นซ้ำในครั้งถัดไป
+            # ล้าง timeup param ไม่ให้ทริกเกอร์ซ้ำ
             try:
                 qp = dict(st.query_params)
                 if "timeup" in qp:
