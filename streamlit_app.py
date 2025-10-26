@@ -48,79 +48,70 @@ def page_exam():
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
 
-    # โหลดชุดข้อสอบที่กำลังใช้งาน (คาดว่า GAS ส่ง window: {now_server,start_ts,end_ts,is_open} มาด้วย)
-  try:
-    js = gas_get("get_active_exam")
-    if not js.get("ok"):
-        st.error("ยังไม่ได้กำหนดชุดข้อสอบที่ใช้อยู่ (Active Exam)")
-        return
-    exam = js["data"]
+    # 1) โหลดชุดข้อสอบที่กำลังใช้งาน
+    try:
+        js = gas_get("get_active_exam")
+        if not js.get("ok"):
+            st.error("ยังไม่ได้กำหนดชุดข้อสอบที่ใช้อยู่ (Active Exam)")
+            st.info("ให้อาจารย์ไปตั้งค่าที่หน้า Dashboard")
+            return
+        exam = js["data"]
     except Exception as e:
-    st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
-    return
+        st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
+        return
 
     qn = int(exam.get("question_count", 0))
-    exam_id = exam.get("exam_id", "")  # 🟩 ประกาศ exam_id ก่อนใช้
-    st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ")
+    exam_id = exam.get("exam_id", "")          # ✅ กำหนด exam_id ตรงนี้ก่อนเสมอ
+    st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    # 🕒 เริ่ม block ตั้งเวลาได้หลังจากนี้เท่านั้น
+    # 2) ตัวจับเวลา: ต้องมาก่อนการสร้างฟอร์ม และอยู่ "หลัง" exam_id เสมอ
     DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))
     ss = st.session_state
-
-    timer_key = f"timer_end_{exam_id}"
+    timer_key = f"timer_end_{exam_id}"         # ✅ ใช้ได้แล้วเพราะ exam_id ถูกกำหนดแล้ว
     if timer_key not in ss:
-    ss[timer_key] = time.time() + DURATION_MIN * 60
-
+        ss[timer_key] = time.time() + DURATION_MIN * 60
     end_ts = ss[timer_key]
     remaining_sec = max(0, int(end_ts - time.time()))
 
-    # --- Session state ---
-    ss = st.session_state
-    ss.setdefault("submitted", False)               # ล็อคถาวรหลังส่งสำเร็จ
-    ss.setdefault("pending_submit_payload", None)   # ใช้ล็อคทันทีเมื่อกำลังกดส่ง
-    ss.setdefault("submit_result", None)            # เก็บผลคะแนน
+    # แสดง countdown แบบลื่น (client-side)
+    components.html(f"""
+    <div style="font-size:1.1rem;font-weight:600;margin:0.25rem 0;">
+      ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
+    </div>
+    <script>
+      const end = {int(end_ts*1000)};
+      const t = document.getElementById('t');
+      function pad(n){{return n.toString().padStart(2,'0');}}
+      function tick(){{
+        const now = Date.now();
+        let s = Math.max(0, Math.floor((end - now)/1000));
+        const m = Math.floor(s/60);
+        const ss = s % 60;
+        t.textContent = `${{pad(m)}}:${{pad(ss)}}`;
+      }}
+      tick(); setInterval(tick, 250);
+    </script>
+    """, height=40)
+
+    # 3) Session state หลัก
+    ss.setdefault("submitted", False)
+    ss.setdefault("pending_submit_payload", None)
+    ss.setdefault("submit_result", None)
     ss.setdefault("submit_error", None)
     ss.setdefault("answers", [""] * qn)
-    ss.setdefault("auto_name", "")                  # เก็บชื่อไว้สำหรับ auto-submit
 
     # ถ้ามีผลลัพธ์แล้ว ให้ล็อคทันที
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
-# ==== แสดง countdown แบบลื่น (ไม่ rerun) ด้วย HTML/JS ====
-components.html(f"""
-<div style="font-size:1.1rem; font-weight:600; margin: 0.25rem 0;">
-  ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
-</div>
-<script>
-  const end = {int(end_ts * 1000)};
-  const t = document.getElementById('t');
-  function pad(n){{return n.toString().padStart(2,'0');}}
-  function tick(){{
-    const now = Date.now();
-    let s = Math.max(0, Math.floor((end - now)/1000));
-    const m = Math.floor(s/60);
-    const ss = s % 60;
-    t.textContent = `${{pad(m)}}:${{pad(ss)}}`;
-  }}
-  tick();
-  setInterval(tick, 250);
-</script>
-""", height=40)
-
-# ถ้าเวลาหมด → บังคับปิดฟอร์ม/ปุ่มส่ง และบอกผู้ใช้
-if remaining_sec == 0 and not ss.get("submitted", False):
-    st.warning("⛔ หมดเวลาแล้ว กรุณาส่งข้อสอบภายในเวลาที่กำหนด")
-
-
-    # ===== ฟอร์มทำข้อสอบ (ไม่ rerun ระหว่างเลือก) =====
+    # 4) ควบคุมการปิด/เปิดอินพุต
     is_pending = ss["pending_submit_payload"] is not None
-    disabled_all = ss["submitted"] or is_pending or (remain_ms == 0 if remain_ms is not None else False)
+    disabled_all = ss["submitted"] or is_pending or (remaining_sec == 0)
 
+    # 5) ใช้ st.form เพื่อไม่ให้ rerun ระหว่างเลือก radio
+    form_disabled = disabled_all
     with st.form("exam_form", clear_on_submit=False):
-        name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=disabled_all)
-        if name.strip():
-            ss["auto_name"] = name.strip()  # สำหรับ auto-submit
+        name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
 
         options = ["A", "B", "C", "D", "E"]
         if len(ss["answers"]) != qn:
@@ -133,7 +124,7 @@ if remaining_sec == 0 and not ss.get("submitted", False):
                 options=[""] + options,
                 index=([""] + options).index(current) if current in ([""] + options) else 0,
                 horizontal=True,
-                disabled=disabled_all,
+                disabled=form_disabled,
                 key=f"q_{i+1}_radio_form",
             )
             ss["answers"][i] = choice
@@ -143,12 +134,14 @@ if remaining_sec == 0 and not ss.get("submitted", False):
             "ส่งคำตอบ",
             type="primary",
             use_container_width=True,
-            disabled=disabled_all,
+            disabled=form_disabled,
         )
 
-    # ===== เตรียมยิงจริงเมื่อกดส่ง =====
+    # 6) เตรียม payload เมื่อกดส่ง
     if submitted_form and not ss["submitted"]:
-        if not name.strip():
+        if remaining_sec == 0:
+            ss["submit_error"] = "หมดเวลาแล้ว ไม่สามารถส่งคำตอบได้"
+        elif not name.strip():
             ss["submit_error"] = "กรุณากรอกชื่อ"
         else:
             ss["submit_error"] = None
@@ -158,7 +151,7 @@ if remaining_sec == 0 and not ss.get("submitted", False):
                 "answers": ss["answers"],
             }
 
-    # ===== ส่งจริง (ล็อคทันที + spinner + rerun) =====
+    # 7) ส่งจริง → ล็อคทันที + spinner + rerun
     if ss["pending_submit_payload"] is not None:
         with st.spinner("กำลังส่งคำตอบ..."):
             try:
@@ -170,8 +163,7 @@ if remaining_sec == 0 and not ss.get("submitted", False):
                 else:
                     err = js2.get("error") or "ส่งคำตอบไม่สำเร็จ"
                     ss["submit_error"] = err
-                    # ถ้าเป็นชื่อซ้ำ/เลยเวลา → ล็อคถาวร
-                    ss["submitted"] = (err in ["DUPLICATE_SUBMISSION", "AFTER_WINDOW"])
+                    ss["submitted"] = (err == "DUPLICATE_SUBMISSION")
             except Exception as e:
                 ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
                 ss["submitted"] = False
@@ -179,14 +171,9 @@ if remaining_sec == 0 and not ss.get("submitted", False):
                 ss["pending_submit_payload"] = None
         st.rerun()
 
-    # ===== แจ้งผล/ข้อผิดพลาด =====
+    # 8) แสดงผลลัพธ์/ข้อผิดพลาด
     if ss["submit_error"]:
-        if ss["submit_error"] == "BEFORE_WINDOW":
-            st.error("ยังไม่ถึงเวลาเริ่มสอบ")
-        elif ss["submit_error"] == "AFTER_WINDOW":
-            st.error("หมดเวลาสอบแล้ว")
-        else:
-            st.error(ss["submit_error"])
+        st.error(ss["submit_error"])
 
     if ss["submit_result"]:
         res = ss["submit_result"]
