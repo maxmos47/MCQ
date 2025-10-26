@@ -557,7 +557,9 @@ def page_dashboard():
                             
                     except Exception as e:
                         st.error(f"บันทึกล้มเหลว: {e}")
+        st.divider()
         # ------------------- 📌 END NEW FEATURE -------------------
+        
         st.subheader("ผลการสอบของชุดนี้")
         try:
             jsr = gas_get("get_dashboard", {"exam_id": chosen_id})
