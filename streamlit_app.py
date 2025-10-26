@@ -12,7 +12,7 @@ st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="cent
 def ensure_thai_font():
     # 1) ลองใช้ฟอนต์จาก repo ก่อน (แนะนำอัปไฟล์ไว้ในโปรเจกต์)
     local_font = os.path.join(os.path.dirname(__file__), "fonts", "NotoSansThai-Regular.ttf")
-    tmp_font   = "/tmp/NotoSansThai-Regular.ttf"
+    tmp_font   = "/NotoSansThai-Regular.ttf"
 
     font_path = None
     if os.path.exists(local_font):
