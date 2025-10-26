@@ -424,12 +424,12 @@ def page_dashboard():
                     plot1 = item_df.sort_values("%ถูก", ascending=True)
                     fig1, ax1 = plt.subplots(figsize=(10, max(3.5, 0.55 * len(plot1))))
                     ax1.barh(plot1["ข้อ"].astype(str), plot1["%ถูก"])
-                    ax1.set_xlabel("% ถูก", fontsize=12)
-                    ax1.set_ylabel("ข้อ", fontsize=12)
+                    ax1.set_xlabel("% ถูก", fontsize=14)
+                    ax1.set_ylabel("ข้อ", fontsize=14)
                     ax1.set_xlim(0, 100)
                     ax1.set_title("เปอร์เซ็นต์ตอบถูกต่อข้อ (เรียงจากยากไปง่าย)", fontsize=14, pad=12)
                     for i, v in enumerate(plot1["%ถูก"].tolist()):
-                        ax1.text(v + 1, i, f"{v}%", va="center", fontsize=11)
+                        ax1.text(v + 1, i, f"{v}%", va="center", fontsize=12)
                     plt.tight_layout()
                     st.pyplot(fig1, use_container_width=True)
 
