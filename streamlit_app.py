@@ -73,7 +73,6 @@ def page_exam():
     ss.setdefault("answers", [""] * qn)          # ให้มีความยาวเท่าจำนวนข้อ
     ss.setdefault("auto_name", "")               # เก็บชื่อไว้ใช้ตอน auto-submit
     ss.setdefault("auto_submit_done", False)     # กันยิงซ้ำตอนหมดเวลา
-    ss["auto_name"] = name.strip()
 
     # 3) ตัวจับเวลา (หลังรู้ exam_id แล้ว)
     DURATION_MIN = int(st.secrets.get("app", {}).get("duration_minutes", 20))
