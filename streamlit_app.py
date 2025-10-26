@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import textwrap
 import os, urllib.request
+import time
+from streamlit_autorefresh import st_autorefresh
 
 plt.rcParams['font.family'] = 'tahoma'
 mpl.font_manager.fontManager.addfont('thsarabunnew-webfont.ttf')
@@ -45,7 +47,7 @@ def page_exam():
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
 
-    # โหลดชุดข้อสอบที่กำลังใช้งาน
+    # โหลดชุดข้อสอบที่กำลังใช้งาน (จะส่ง window: {now_server, start_ts, end_ts, is_open} มาด้วย หาก GAS รองรับ)
     try:
         js = gas_get("get_active_exam")
         if not js.get("ok"):
@@ -61,6 +63,19 @@ def page_exam():
     exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
+    # ========= READ EXAM WINDOW & COUNTDOWN =========
+    # คาดหวังจาก GAS: exam["window"] = { now_server: ms, start_ts: ms|None, end_ts: ms|None, is_open: bool }
+    win = exam.get("window", {}) or {}
+    now_server = int(win.get("now_server") or 0)  # เวลา server (ms)
+    start_ts   = win.get("start_ts")              # epoch ms (หรือ None ถ้าไม่ตั้งเวลา)
+    end_ts     = win.get("end_ts")                # epoch ms
+    is_open    = bool(win.get("is_open", True))   # True = อยู่ในหน้าต่างเวลา
+
+    # ถ้าตั้งเวลา (มี start & end) และตอนนี้อยู่นอกเวลา -> ไม่ให้เข้าทำข้อสอบ
+    if (start_ts is not None and end_ts is not None) and not is_open:
+        st.error("อยู่นอกช่วงเวลาที่อนุญาตให้สอบ")
+        st.stop()
+
     # --- Session state ---
     ss = st.session_state
     ss.setdefault("submitted", False)               # ล็อคถาวรหลังส่งสำเร็จ
@@ -68,19 +83,55 @@ def page_exam():
     ss.setdefault("submit_result", None)            # เก็บผลคะแนน
     ss.setdefault("submit_error", None)
     ss.setdefault("answers", [""] * qn)
+    ss.setdefault("auto_name", "")                  # เก็บชื่อไว้สำหรับ auto-submit
 
     # ถ้ามีผลลัพธ์แล้ว ให้ล็อคทันที
     if ss["submit_result"] is not None:
         ss["submitted"] = True
 
+    # ===== Countdown & auto-refresh (1s) เฉพาะตอนยังไม่ส่ง =====
+    remain_ms = None
+    if end_ts is not None:
+        # คำนวณ offset ระหว่าง client กับ server เพื่อให้ countdown อิงเวลา server
+        client_now_ms = int(time.time() * 1000)
+        offset = now_server - client_now_ms  # server - client
+
+        # อัปเดตทุก 1 วินาที ขณะแสดงข้อสอบและยังไม่ส่ง
+        if not ss["submitted"]:
+            st_autorefresh(interval=1000, key="exam_countdown_tick")
+
+        # เวลาปัจจุบันแบบเทียบ server
+        now_adj = int(time.time() * 1000) + offset
+        remain_ms = max(0, int(end_ts) - now_adj)
+
+        # แสดงเวลาคงเหลือแบบ mm:ss
+        sec = remain_ms // 1000
+        mm = sec // 60
+        ss_ = sec % 60
+        st.info(f"⏳ เวลาสอบคงเหลือ: **{mm:02d}:{ss_:02d}**")
+
+        # ถ้าหมดเวลาแล้ว และยังไม่ได้ส่ง → เตรียม payload เพิ่อส่งอัตโนมัติและ rerun
+        if remain_ms == 0 and not ss["submitted"]:
+            if ss.get("pending_submit_payload") is None:
+                ss["submit_error"] = None
+                ss["pending_submit_payload"] = {
+                    "exam_id": exam_id,
+                    "student_name": ss.get("auto_name", "") or "",
+                    "answers": ss.get("answers", []),
+                }
+            st.warning("หมดเวลา ระบบกำลังส่งคำตอบให้อัตโนมัติ…")
+            st.rerun()
+
     # ⚠️ ต้องประกาศก่อนเข้า form
     is_pending = ss["pending_submit_payload"] is not None
-    disabled_all = ss["submitted"] or is_pending
+    disabled_all = ss["submitted"] or is_pending or (remain_ms == 0 if remain_ms is not None else False)
 
     # === ใช้ st.form เพื่อไม่ให้ rerun ระหว่างเลือก ===
     form_disabled = disabled_all
     with st.form("exam_form", clear_on_submit=False):
         name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=form_disabled)
+        if name.strip():
+            ss["auto_name"] = name.strip()  # เก็บชื่อไว้สำหรับ auto-submit
 
         options = ["A", "B", "C", "D", "E"]
         if len(ss["answers"]) != qn:
@@ -130,8 +181,8 @@ def page_exam():
                 else:
                     err = js2.get("error") or "ส่งคำตอบไม่สำเร็จ"
                     ss["submit_error"] = err
-                    # ถ้าเป็นชื่อซ้ำในชุดนี้ → ล็อคถาวร
-                    ss["submitted"] = (err == "DUPLICATE_SUBMISSION")
+                    # ถ้าเป็นชื่อซ้ำในชุดนี้ หรือเลยเวลา → ล็อคถาวร
+                    ss["submitted"] = (err in ["DUPLICATE_SUBMISSION", "AFTER_WINDOW"])
             except Exception as e:
                 ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
                 ss["submitted"] = False
@@ -141,7 +192,12 @@ def page_exam():
 
     # ======= แจ้งผล/ข้อผิดพลาด =======
     if ss["submit_error"]:
-        st.error(ss["submit_error"])
+        if ss["submit_error"] == "BEFORE_WINDOW":
+            st.error("ยังไม่ถึงเวลาเริ่มสอบ")
+        elif ss["submit_error"] == "AFTER_WINDOW":
+            st.error("หมดเวลาสอบแล้ว")
+        else:
+            st.error(ss["submit_error"])
 
     if ss["submit_result"]:
         res = ss["submit_result"]
@@ -152,7 +208,7 @@ def page_exam():
             df = df[["q", "ans", "correct", "status"]]
             df.columns = ["ข้อ", "คำตอบ", "เฉลย", "สถานะ"]
             st.dataframe(df, hide_index=True, use_container_width=True)
-
+            
 # ====================== Teacher Dashboard ======================
 def page_dashboard():
     st.markdown("### 👩‍🏫 Dashboard อาจารย์ — ตั้งค่า Active Exam และดูผล")
