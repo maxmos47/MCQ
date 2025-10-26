@@ -9,43 +9,6 @@ import os, urllib.request
 
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
-def ensure_thai_font():
-    # 1) ลองใช้ฟอนต์จาก repo ก่อน (แนะนำอัปไฟล์ไว้ในโปรเจกต์)
-    local_font = os.path.join(os.path.dirname(__file__), "fonts", "NotoSansThai-Regular.ttf")
-    tmp_font   = "/NotoSansThai-Regular.ttf"
-
-    font_path = None
-    if os.path.exists(local_font):
-        font_path = local_font
-    else:
-        # 2) ถ้าไม่มีไฟล์ใน repo → ดาวน์โหลดจาก Google Fonts (สำรอง)
-        try:
-            if not os.path.exists(tmp_font):
-                urllib.request.urlretrieve(
-                    "https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai-Regular.ttf",
-                    tmp_font,
-                )
-            font_path = tmp_font
-        except Exception as e:
-            print("WARN: download Thai font failed:", e)
-
-    # 3) ลงทะเบียนฟอนต์ + บังคับ Matplotlib ใช้
-    if font_path and os.path.exists(font_path):
-        try:
-            fm.fontManager.addfont(font_path)
-            plt.rcParams["font.family"] = ["Noto Sans Thai", "Tahoma", "DejaVu Sans", "sans-serif"]
-            plt.rcParams["font.sans-serif"] = ["Noto Sans Thai", "Tahoma", "DejaVu Sans", "sans-serif"]
-            plt.rcParams["axes.unicode_minus"] = False  # กันเครื่องหมายลบเป็นสี่เหลี่ยม
-        except Exception as e:
-            print("WARN: cannot register Thai font:", e)
-    else:
-        # ไม่มีฟอนต์เลย → อย่างน้อยให้ลอง DejaVu Sans และปิด unicode minus
-        plt.rcParams["font.family"] = ["DejaVu Sans", "sans-serif"]
-        plt.rcParams["axes.unicode_minus"] = False
-
-# เรียกใช้งานให้แน่ใจว่าตั้งค่าก่อนวาดกราฟใด ๆ
-ensure_thai_font()
-
 GAS_WEBAPP_URL = st.secrets.get("gas", {}).get("webapp_url", "").strip()
 TEACHER_KEY = st.secrets.get("app", {}).get("teacher_key", "").strip()
 TIMEOUT = 25
