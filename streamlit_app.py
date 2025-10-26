@@ -86,41 +86,37 @@ def page_exam():
     end_ts = ss[timer_key]
     remaining_sec = max(0, int(end_ts - time.time()))
 
-    # 3.1) แสดง countdown และ "รีโหลดหน้าแอปเพียงครั้งเดียวเมื่อถึง 0:00"
-    # ใช้ sessionStorage เป็นตัวกันวนลูป reload ต่อเนื่อง
-    unique_flag = f"timeup-reloaded-{exam_id}-{int(end_ts)}"
-    components.html(f"""
-    <div style="font-size:1.1rem;font-weight:600;margin:0.25rem 0;">
-      ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
-    </div>
-    <script>
-      const end = {int(end_ts*1000)};
-      const t = document.getElementById('t');
-      const flagKey = "{unique_flag}";
+        # 3.1) Autorefresh แบบปรับเฟส (เบาบางช่วงแรก ถี่ขึ้นช่วงท้าย) + ไม่ทำงานระหว่างกำลังส่ง
+    is_pending = ss.get("pending_submit_payload") is not None
+    suppress = ss.get("suppress_autorefresh", False)
+    submitted = ss.get("submitted", False)
 
-      function pad(n){{return n.toString().padStart(2,'0');}}
-      function tick(){{
-        const now = Date.now();
-        let s = Math.max(0, Math.floor((end - now)/1000));
-        const m = Math.floor(s/60);
-        const ss = s % 60;
-        t.textContent = `${{pad(m)}}:${{pad(ss)}}`;
+    want_refresh = (not submitted) and (not is_pending) and (not suppress) and (remaining_sec > 0)
 
-        if (s <= 0) {{
-          // reload เพียงครั้งเดียว ด้วย query param &timeup=1
-          if (!sessionStorage.getItem(flagKey)) {{
-            sessionStorage.setItem(flagKey, '1');
-            const url = new URL(window.location.href);
-            url.searchParams.set('timeup', '1');
-            url.searchParams.set('ts', String(Date.now()));
-            window.location.replace(url.toString());
-          }}
-        }}
-      }}
-      tick();
-      setInterval(tick, 250);
-    </script>
-    """, height=40)
+    if want_refresh:
+        # ปรับเฟสตามเวลาเหลือ เพื่อลด overlay และกัน throttle
+        if remaining_sec > 60:
+            interval_ms = 30000   # ทุก 30 วินาที (ช่วงยาว)
+            limit = max(1, remaining_sec // 30)
+            phase = "p30"
+        elif remaining_sec > 20:
+            interval_ms = 5000    # ทุก 5 วินาที (เข้าโค้ง)
+            limit = max(1, remaining_sec // 5)
+            phase = "p5"
+        elif remaining_sec > 5:
+            interval_ms = 2000    # ทุก 2 วินาที (ใกล้มาก)
+            limit = max(1, remaining_sec // 2)
+            phase = "p2"
+        else:
+            interval_ms = 1000    # วินาทีสุดท้าย เพื่อให้ถึง 0 แน่ ๆ
+            limit = remaining_sec
+            phase = "p1"
+
+        st_autorefresh(
+            interval=interval_ms,
+            limit=limit,
+            key=f"ar-{exam_id}-{int(end_ts)}-{phase}",
+        )
 
     # 3.2) ถ้าหมดเวลา → บังคับส่งอัตโนมัติ (ยิงครั้งเดียว)
     # เงื่อนไข: remaining_sec == 0 หรือมีพารามิเตอร์ timeup=1 จากการรีโหลด
