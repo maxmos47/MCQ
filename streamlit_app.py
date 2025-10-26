@@ -95,7 +95,7 @@ def is_within_window(start_utc: str, end_utc: str) -> tuple[bool, str]:
         return True, f"ไม่สามารถตรวจสอบเวลาได้ ({e})"
 
 def page_exam():
-    st.markdown("### 📝 กระดาษคำตอบ MCQ (มือถือ) — ชุดข้อสอบที่อาจารย์กำหนด")
+    st.markdown("### 📝 กระดาษคำตอบ MCQ EP-Rajavitthi")
     if not GAS_WEBAPP_URL:
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
