@@ -88,7 +88,7 @@ def page_exam():
 
     # 3.1) เปิด autorefresh เฉพาะช่วง 7 วินาทีสุดท้าย (กัน throttle / ไม่กวนตอนพิมพ์)
     is_pending = ss.get("pending_submit_payload") is not None
-    TAIL_SECONDS = 7
+    TAIL_SECONDS = 10
     want_autorefresh_tail = (
         (not ss.get("submitted", False)) and
         (not is_pending) and
