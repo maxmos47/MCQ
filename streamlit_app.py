@@ -228,21 +228,21 @@ def page_dashboard():
             return
         st.success("เข้าสู่ระบบแล้ว ✅")
 
-    # โหลด Config/Exams
-try:
-    cfg = gas_get("get_config")
-    if not cfg.get("ok"):
-        st.error(cfg.get("error", "Config error"))
-        return
-    exams = cfg["data"]["exams"]
-    active_id = cfg["data"].get("active_exam_id", "")
-except Exception as e:
-    st.error(f"โหลดข้อมูลล้มเหลว: {e}")
-    return
+        # โหลด Config/Exams
+        try:
+            cfg = gas_get("get_config")
+            if not cfg.get("ok"):
+                st.error(cfg.get("error", "Config error"))
+                return
+            exams = cfg["data"]["exams"]
+            active_id = cfg["data"].get("active_exam_id", "")
+        except Exception as e:
+            st.error(f"โหลดข้อมูลล้มเหลว: {e}")
+            return
 
-if not exams:
-    st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
-    return
+        if not exams:
+            st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
+            return
 
         # เลือกชุดข้อสอบ Active
         id_to_title = {e["exam_id"]: e["title"] for e in exams}
