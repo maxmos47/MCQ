@@ -7,35 +7,18 @@ import textwrap
 import matplotlib.font_manager as fm
 import os, urllib.request
 
-# โหลด/ตั้งค่าฟอนต์ไทยให้ Matplotlib
 def ensure_thai_font():
-    local_font = os.path.join(os.path.dirname(__file__), "fonts", "NotoSansThai-Regular.ttf")
-    tmp_font   = "/tmp/NotoSansThai-Regular.ttf"
-
-    font_path = None
-    if os.path.exists(local_font):
-        font_path = local_font
-    else:
-        # fallback: ดาวน์โหลดจาก Google Fonts (ถ้าไม่มีในโปรเจกต์)
-        try:
-            if not os.path.exists(tmp_font):
-                urllib.request.urlretrieve(
-                    "https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai-Regular.ttf",
-                    tmp_font,
-                )
-            font_path = tmp_font
-        except Exception as e:
-            print("WARN: download Thai font failed:", e)
-
-    # ลงทะเบียนฟอนต์ + บังคับใช้
-    if font_path and os.path.exists(font_path):
+    """ตั้งค่าให้ Matplotlib ใช้ฟอนต์ไทย"""
+    font_path = os.path.join(os.path.dirname(__file__), "fonts", "NotoSansThai-Regular.ttf")
+    if os.path.exists(font_path):
         fm.fontManager.addfont(font_path)
         plt.rcParams["font.family"] = ["Noto Sans Thai", "DejaVu Sans", "sans-serif"]
+        plt.rcParams["axes.unicode_minus"] = False
     else:
-        plt.rcParams["font.family"] = ["DejaVu Sans", "sans-serif"]
-
-    # กันปัญหาเครื่องหมายลบแสดงเป็นสี่เหลี่ยม
-    plt.rcParams["axes.unicode_minus"] = False
+        print("⚠️ ไม่พบฟอนต์ NotoSansThai-Regular.ttf")
+        
+# เรียกครั้งเดียวก่อนวาดกราฟ
+ensure_thai_font()
 
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
