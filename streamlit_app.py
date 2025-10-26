@@ -34,6 +34,8 @@ def page_exam():
     if not GAS_WEBAPP_URL:
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
         return
+
+    # 1) โหลดชุดข้อสอบที่กำลังใช้งาน
     try:
         js = gas_get("get_active_exam")
         if not js.get("ok"):
@@ -45,52 +47,104 @@ def page_exam():
         st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
         return
 
-    qn = int(exam.get("question_count",0))
-    exam_id = exam.get("exam_id","")
+    qn = int(exam.get("question_count", 0))
+    exam_id = exam.get("exam_id", "")
     st.info(f"ชุด: {exam_id} • {exam.get('title','')} • จำนวน {qn} ข้อ (ตัวเลือก A–E)")
 
-    if "submitted" not in st.session_state: st.session_state["submitted"] = False
-    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=st.session_state["submitted"])
+    # 2) จัดการ state ให้ครบ
+    ss = st.session_state
+    ss.setdefault("submitted", False)                 # ล็อคถาวรหลังส่งสำเร็จ
+    ss.setdefault("pending_submit_payload", None)     # payload รอส่ง
+    ss.setdefault("submit_error", None)               # เก็บ error ล่าสุด (ถ้ามี)
+    ss.setdefault("submit_result", None)              # เก็บผลคะแนน (ใช้โชว์หลังส่ง)
+    ss.setdefault("answers", [""] * qn)
 
-    options = ["A","B","C","D","E"]
-    if "answers" not in st.session_state or len(st.session_state["answers"])!=qn:
-        st.session_state["answers"] = [""]*qn
+    # จะปิดอินพุต/ปุ่ม ถ้าส่งแล้วหรือกำลังส่ง
+    is_pending = ss["pending_submit_payload"] is not None
+    disabled_all = ss["submitted"] or is_pending
+
+    # 3) อินพุตชื่อ
+    name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=disabled_all)
+
+    # 4) Radio ต่อข้อ (single-choice)
+    options = ["A", "B", "C", "D", "E"]
+    if len(ss["answers"]) != qn:
+        ss["answers"] = [""] * qn
 
     for i in range(qn):
-        st.session_state["answers"][i] = st.radio(
+        ss["answers"][i] = st.radio(
             f"ข้อ {i+1}",
-            options=[""]+options,
-            index=([""]+options).index(st.session_state["answers"][i]) if st.session_state["answers"][i] in ([""]+options) else 0,
+            options=[""] + options,
+            index=([""] + options).index(ss["answers"][i]) if ss["answers"][i] in ([""] + options) else 0,
             horizontal=True,
-            disabled=st.session_state["submitted"],
-            key=f"q_{i+1}_radio"
+            disabled=disabled_all,
+            key=f"q_{i+1}_radio",
         )
         st.divider()
 
-    if st.button("ส่งคำตอบ", type="primary", use_container_width=True, disabled=st.session_state["submitted"]):
+    # 5) ปุ่มส่ง — กดแล้ว "ล็อคทันที" โดยไม่รอ API
+    def _arm_submit():
         if not name.strip():
-            st.warning("กรุณากรอกชื่อ")
+            # กันเคสไม่กรอกชื่อ: ไม่ตั้ง pending, ให้ผู้ใช้กรอกก่อน
+            ss["submit_error"] = "กรุณากรอกชื่อ"
             return
-        try:
-            js2 = gas_post("submit", {"exam_id": exam_id, "student_name": name.strip(), "answers": st.session_state["answers"]})
-            if js2.get("ok"):
-                st.session_state["submitted"] = True
-                res = js2["data"]
-                st.success(f"ส่งคำตอบสำเร็จ ✅ ได้คะแนน {res['score']} / {qn} ({res['percent']}%)")
-                with st.expander("ดูเฉลยรายข้อ / ผลลัพธ์"):
-                    df = pd.DataFrame(res["detail"])
-                    df["status"] = df["is_correct"].map({True:"ถูก", False:"ผิด"})
-                    df = df[["q","ans","correct","status"]]
-                    df.columns = ["ข้อ","คำตอบ","เฉลย","สถานะ"]
-                    st.dataframe(df, hide_index=True, use_container_width=True)
-            else:
-                if js2.get("error")=="DUPLICATE_SUBMISSION":
-                    st.session_state["submitted"] = True
-                    st.info("ชื่อผู้สอบนี้ได้ส่งคำตอบแล้วสำหรับชุดนี้ (ระบบล็อคการส่งซ้ำ)")
+        # ล็อค UI โดยเซ็ต payload ไว้ก่อน (ถือว่า 'กำลังส่ง')
+        ss["submit_error"] = None
+        ss["submit_result"] = None
+        ss["pending_submit_payload"] = {
+            "exam_id": exam_id,
+            "student_name": name.strip(),
+            "answers": ss["answers"],
+        }
+        # เคล็ดลับ: ล็อคทุกอย่างทันทีตั้งแต่ตอนนี้
+        # (disabled_all ด้านบนจะเป็น True เพราะ pending_submit_payload ไม่ใช่ None)
+
+    st.button(
+        "ส่งคำตอบ",
+        type="primary",
+        use_container_width=True,
+        disabled=disabled_all,
+        on_click=_arm_submit,
+    )
+
+    # 6) ถ้ามี payload ค้าง → ทำการส่งจริง พร้อม spinner และอัปเดตผล
+    if ss["pending_submit_payload"] is not None:
+        with st.spinner("กำลังส่งคำตอบ..."):
+            try:
+                js2 = gas_post("submit", ss["pending_submit_payload"])
+                if js2.get("ok"):
+                    ss["submitted"] = True             # ล็อคถาวร
+                    ss["submit_result"] = js2["data"]
+                    ss["submit_error"] = None
                 else:
-                    st.error(f"ส่งคำตอบไม่สำเร็จ: {js2.get('error')}")
-        except Exception as e:
-            st.error(f"ส่งคำตอบล้มเหลว: {e}")
+                    # ล้มเหลว → แจ้งเตือนและ "ปลดล็อค" ให้กรอกใหม่ ยกเว้น DUPLICATE
+                    err = js2.get("error")
+                    ss["submit_error"] = err or "ส่งคำตอบไม่สำเร็จ"
+                    if err == "DUPLICATE_SUBMISSION":
+                        ss["submitted"] = True         # ชื่อนี้เคยส่งแล้ว → ล็อคถาวร
+                    else:
+                        ss["submitted"] = False        # ส่งไม่สำเร็จ → ปลดล็อคให้แก้ไข
+            except Exception as e:
+                # เกิด Exception ระหว่างส่ง → ให้ปลดล็อคเพื่อส่งใหม่
+                ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
+                ss["submitted"] = False
+            finally:
+                ss["pending_submit_payload"] = None    # เคลียร์สถานะ 'กำลังส่ง'
+        st.rerun()  # รีเฟรชเพื่อสะท้อนสถานะใหม่ (ปุ่ม/อินพุตจะเป็นไปตาม submitted)
+
+    # 7) แสดงผลลัพธ์/ข้อผิดพลาด (หลัง rerun จะมาขึ้นตรงนี้)
+    if ss["submit_error"]:
+        st.error(ss["submit_error"])
+
+    if ss["submit_result"]:
+        res = ss["submit_result"]
+        st.success(f"ส่งคำตอบสำเร็จ ✅ ได้คะแนน {res['score']} / {qn} ({res['percent']}%)")
+        with st.expander("ดูเฉลยรายข้อ / ผลลัพธ์"):
+            df = pd.DataFrame(res["detail"])
+            df["status"] = df["is_correct"].map({True: "ถูก", False: "ผิด"})
+            df = df[["q", "ans", "correct", "status"]]
+            df.columns = ["ข้อ", "คำตอบ", "เฉลย", "สถานะ"]
+            st.dataframe(df, hide_index=True, use_container_width=True)
 
 def page_dashboard():
     st.markdown("### 👩‍🏫 Dashboard อาจารย์ — ตั้งค่า Active Exam และดูผล")
