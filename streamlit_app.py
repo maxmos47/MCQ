@@ -82,7 +82,11 @@ def page_exam():
     end_ts = ss[timer_key]
     remaining_sec = max(0, int(end_ts - time.time()))
 
-    # แสดง countdown แบบ client-side (ไม่ทำให้หน้ามืด)
+    # 🔁 ให้เซิร์ฟเวอร์ rerun ทุก 1 วินาทีระหว่างยังมีเวลาอยู่
+    if not ss.get("submitted", False) and remaining_sec > 0:
+        st_autorefresh(interval=1000, key=f"auto-refresh-{exam_id}")
+
+    # 4) แสดง countdown แบบ client-side (ไม่ทำให้หน้ามืด)
     components.html(f"""
     <div style="font-size:1.1rem;font-weight:600;margin:0.25rem 0;">
       ⏱️ เวลาที่เหลือ: <span id="t">--:--</span>
@@ -102,12 +106,8 @@ def page_exam():
     </script>
     """, height=40)
 
-    # 4) ถ้ามีผลลัพธ์แล้ว ให้ล็อคทันที
-    if ss["submit_result"] is not None:
-        ss["submitted"] = True
-
     # 5) หมดเวลา → บังคับส่งอัตโนมัติ (ยิงครั้งเดียว)
-    if remaining_sec == 0 and not ss["submitted"] and not ss["auto_submit_done"]:
+    if remaining_sec == 0 and not ss.get("submitted", False) and not ss.get("auto_submit_done", False):
         st.warning("⏰ หมดเวลาทำข้อสอบ ระบบกำลังส่งคำตอบให้อัตโนมัติ…")
         payload = {
             "exam_id": exam_id,
