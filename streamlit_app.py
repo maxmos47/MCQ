@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from datetime import timedelta
 
+# ---------------- Custom CSS for Mobile UI/Card Style ----------------
 def load_css():
     st.markdown("""
         <style>
@@ -21,18 +22,18 @@ def load_css():
         .block-container {
             padding-top: 2rem;
             padding-bottom: 2rem;
-            padding-left: 1rem !important; /* Force minimal padding on sides */
-            padding-right: 1rem !important; /* Force minimal padding on sides */
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
         }
         
         /* 2. Style for Question Card */
         .stQuestionCard {
             border: 1px solid #e0e0e0;
-            border-radius: 12px; /* Soften the corners */
+            border-radius: 12px;
             padding: 15px;
-            margin-bottom: 12px; /* Space between cards */
-            box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.05); /* Soft shadow */
-            background-color: #ffffff; /* White background */
+            margin-bottom: 12px;
+            box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.05);
+            background-color: #ffffff;
         }
 
         /* 3. Reduce vertical space (st.divider) in form */
@@ -50,14 +51,27 @@ def load_css():
         }
         /* Highlight selected option */
         div[data-testid*="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
-            background-color: #e6f7ff; /* Light blue background for selected */
-            border-left: 3px solid var(--primary-color); /* Primary color stripe */
+            background-color: #e6f7ff;
+            border-left: 3px solid var(--primary-color);
         }
-        
-        /* 5. Reduce font size for st.metric values (specifically the time string) */
+
+        /* 5. Reduce font size for st.metric values (time) */
         div[data-testid="stMetricValue"] {
-            font-size: 1.2rem; /* ปรับลดขนาดตัวอักษรลงเล็กน้อย */
+            font-size: 1.2rem;
             line-height: 1.4;
+        }
+
+        /* 6. ENHANCEMENT: Force Radio Options to wrap/fit horizontally on mobile */
+        /* Targets the container holding the radio options */
+        div[data-testid*="stRadio"] > div {
+            display: flex; /* Ensure it uses flex layout */
+            flex-wrap: wrap; /* Allow wrapping onto the next line */
+            gap: 5px; /* Add slight space between options for better touch target */
+        }
+        /* Ensure each option is a flex item */
+        div[data-testid*="stRadio"] label {
+            flex-grow: 0;
+            flex-shrink: 0;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -166,7 +180,7 @@ def is_within_window(start_utc: str, end_utc: str) -> tuple[bool, str]:
         return True, f"ไม่สามารถตรวจสอบเวลาได้ ({e})"
 
 def page_exam():
-    #load_css()
+    load_css()
     st.markdown("### 📝 กระดาษคำตอบ MCQ Resident ER-Rajavithi")
     if not GAS_WEBAPP_URL:
         st.warning("⚠️ ตั้งค่า [gas.webapp_url] ใน Secrets ก่อน")
