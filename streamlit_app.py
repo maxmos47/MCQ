@@ -41,16 +41,28 @@ def gas_get(action: str, params: dict | None = None):
         for k, v in params.items():
             url += f"&{k}={requests.utils.quote(str(v))}"
     r = requests.get(url, timeout=TIMEOUT)
-    r.raise_for_status()
-    return r.json()
+    ct = r.headers.get("Content-Type", "")
+    body_preview = (r.text or "")[:800]
+    if r.status_code != 200:
+        raise RuntimeError(f"GAS HTTP {r.status_code} ({ct}) — {body_preview}")
+    try:
+        return r.json()
+    except Exception:
+        raise RuntimeError(f"GAS ตอบกลับไม่ใช่ JSON ({ct}) — ตัวอย่าง: {body_preview}")
 
 def gas_post(action: str, payload: dict):
     if not GAS_WEBAPP_URL:
         raise RuntimeError("GAS_WEBAPP_URL is not set.")
     url = f"{GAS_WEBAPP_URL}?action={action}"
     r = requests.post(url, json=payload, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    ct = r.headers.get("Content-Type", "")
+    body_preview = (r.text or "")[:800]
+    if r.status_code != 200:
+        raise RuntimeError(f"GAS HTTP {r.status_code} ({ct}) — {body_preview}")
+    try:
+        return r.json()
+    except Exception:
+        raise RuntimeError(f"GAS ตอบกลับไม่ใช่ JSON ({ct}) — ตัวอย่าง: {body_preview}")
 
 # ---------------- Routing (via ?mode=...) ----------------
 raw_mode = st.query_params.get("mode", "exam")
@@ -212,24 +224,39 @@ def page_dashboard():
     if st.button("เข้าสู่ระบบ", use_container_width=True) or key_in:
         if key_in != TEACHER_KEY:
             st.error("รหัสผ่านไม่ถูกต้อง")
+            st.stop()
             return
         st.success("เข้าสู่ระบบแล้ว ✅")
 
-        # โหลด Config/Exams
-        try:
-            cfg = gas_get("get_config")
-            if not cfg.get("ok"):
-                st.error(cfg.get("error", "Config error"))
-                return
-            exams = cfg["data"]["exams"]
-            active_id = cfg["data"].get("active_exam_id", "")
-        except Exception as e:
-            st.error(f"โหลดข้อมูลล้มเหลว: {e}")
+     # โหลด Config/Exams
+    try:
+        cfg = gas_get("get_config")
+        if not cfg.get("ok"):
+            st.error(cfg.get("error", "Config error"))
             return
+        data = cfg.get("data", {}) or {}
 
+        # พยายามอ่าน exams จาก get_config ก่อน
+        exams = data.get("exams", None)
+
+        # ถ้าไม่มี exams → fallback ไป list_exams
         if not exams:
-            st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams'")
-            return
+            le = gas_get("list_exams")
+            exams = le.get("data", []) if le.get("ok") else []
+
+    active_id = data.get("active_exam_id", "")
+except Exception as e:
+    st.error(f"โหลดข้อมูลล้มเหลว: {e}")
+    with st.expander("ดีบั๊ก: ผลลัพธ์ get_config"):
+        try:
+            st.json(cfg)
+        except:
+            st.write("ไม่มี cfg หรือไม่ใช่ JSON")
+    return
+
+if not exams:
+    st.info("ยังไม่มีชุดข้อสอบในชีท 'Exams' หรือ API ไม่ได้ส่งรายการชุดสอบมา")
+    return
 
         # เลือกชุดข้อสอบ Active
         id_to_title = {e["exam_id"]: e["title"] for e in exams}
