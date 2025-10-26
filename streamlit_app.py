@@ -3,7 +3,23 @@ import requests
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import textwrap
+
+# ---------- รองรับภาษาไทย ----------
+try:
+    # ดาวน์โหลดฟอนต์จาก Google Fonts (ถ้ายังไม่มี)
+    font_path = "/tmp/NotoSansThai-Regular.ttf"
+    import os, urllib.request
+    if not os.path.exists(font_path):
+        urllib.request.urlretrieve(
+            "https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai-Regular.ttf",
+            font_path,
+        )
+    fm.fontManager.addfont(font_path)
+    plt.rcParams["font.family"] = "Noto Sans Thai"
+except Exception as e:
+    print("Warning: cannot set Thai font", e)
 
 st.set_page_config(page_title="MCQ Answer Sheet", page_icon="📝", layout="centered")
 
