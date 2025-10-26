@@ -92,6 +92,19 @@ def utc_to_ict(utc_iso_string: str) -> str:
     except Exception:
         return utc_iso_string # Return original string on error
 
+# ---------------- Timezone Helper 2 ----------------
+def ict_to_utc_iso(date_obj, time_obj) -> str:
+    """Converts a combined date/time object (ICT/UTC+7) to UTC ISO string."""
+    try:
+        # 1. Combine date and time objects (assumed to be in ICT/UTC+7)
+        dt_ict = datetime.combine(date_obj, time_obj)
+        # 2. Subtract 7 hours to get to UTC
+        dt_utc = dt_ict - timedelta(hours=7)
+        # 3. Format as ISO 8601 UTC string (ending with Z)
+        return dt_utc.isoformat(timespec='milliseconds') + 'Z'
+    except Exception:
+        return "" # Return empty string on error
+
 # ---------------- Fonts (Thai) ----------------
 # พยายามใช้ TH Sarabun New ถ้ามีไฟล์ในโปรเจกต์ (เช่น thsarabunnew-webfont.ttf)
 try:
@@ -407,7 +420,75 @@ def page_dashboard():
                     st.error(f"บันทึกล้มเหลว: {e}")
         with col2:
             st.caption(f"ชุดที่ใช้อยู่ตอนนี้: **{active_id or 'ยังไม่ได้ตั้ง'}**")
+            # ------------------- 📌 NEW FEATURE: ตั้งค่าช่วงเวลาสอบ -------------------
+        st.divider()
+        st.subheader(f"⏰ ตั้งค่าช่วงเวลาสอบสำหรับชุด: {chosen_id}")
+        
+        # 1. ดึงค่าเวลาเดิม (ถ้ามี)
+        # แปลงเวลา UTC กลับมาเป็นเวลาไทย (UTC+7) สำหรับการแสดงผลใน input field
+        def parse_datetime_ict(utc_iso: str):
+            try:
+                if not utc_iso: return datetime.now() + timedelta(hours=7)
+                dt_utc = datetime.fromisoformat(utc_iso.replace("Z", "+00:00"))
+                return dt_utc + timedelta(hours=7)
+            except:
+                return datetime.now() + timedelta(hours=7)
+        
+        # กำหนดค่าเริ่มต้นตามข้อมูลที่มีใน GAS หรือใช้เวลาปัจจุบันของไทย
+        start_utc_default = current_exam.get("window_start_utc", "")
+        end_utc_default = current_exam.get("window_end_utc", "")
+        
+        default_start_ict = parse_datetime_ict(start_utc_default)
+        default_end_ict = parse_datetime_ict(end_utc_default)
+        
+        with st.form("exam_window_form", border=True):
+            st.markdown("##### กำหนดช่วงเวลา (เวลาประเทศไทย)")
+            
+            col_s_date, col_s_time = st.columns(2)
+            with col_s_date:
+                start_date = st.date_input("วันที่เริ่มต้น", value=default_start_ict.date())
+            with col_s_time:
+                start_time = st.time_input("เวลาเริ่มต้น", value=default_start_ict.time())
 
+            col_e_date, col_e_time = st.columns(2)
+            with col_e_date:
+                end_date = st.date_input("วันที่สิ้นสุด", value=default_end_ict.date())
+            with col_e_time:
+                end_time = st.time_input("เวลาสิ้นสุด", value=default_end_ict.time())
+
+            submit_window = st.form_submit_button("บันทึกช่วงเวลาสอบ", type="primary", use_container_width=True)
+
+        if submit_window:
+            # 2. แปลงเป็น UTC ISO String เพื่อส่งไป GAS
+            start_utc_iso = ict_to_utc_iso(start_date, start_time)
+            end_utc_iso = ict_to_utc_iso(end_date, end_time)
+
+            if start_utc_iso >= end_utc_iso:
+                st.error("เวลาเริ่มต้นต้องอยู่ก่อนเวลาสิ้นสุด")
+            else:
+                with st.spinner("กำลังบันทึกช่วงเวลา..."):
+                    try:
+                        # 3. เรียก GAS Endpoint ใหม่
+                        js_win = gas_post("set_exam_window", {
+                            "exam_id": chosen_id,
+                            "window_start_utc": start_utc_iso,
+                            "window_end_utc": end_utc_iso,
+                            "teacher_key": TEACHER_KEY
+                        })
+
+                        if js_win.get("ok"):
+                            st.success(f"บันทึกช่วงเวลาสอบ (UTC) สำเร็จ: {start_utc_iso} → {end_utc_iso}")
+                            # ต้อง Rerun เพื่อให้ข้อมูล default และหน้า Student อัปเดต
+                            st.rerun() 
+                        elif js_win.get("error") == "UNAUTHORIZED":
+                            st.error("ไม่ได้รับอนุญาต (ตรวจ TEACHER_KEY)")
+                        else:
+                            st.error(f"บันทึกไม่สำเร็จ: {js_win.get('error')}")
+                            st.json(js_win) # Debugging
+                            
+                    except Exception as e:
+                        st.error(f"บันทึกล้มเหลว: {e}")
+        # ------------------- 📌 END NEW FEATURE -------------------
         st.subheader("ผลการสอบของชุดนี้")
         try:
             jsr = gas_get("get_dashboard", {"exam_id": chosen_id})
