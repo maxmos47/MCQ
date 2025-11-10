@@ -192,22 +192,26 @@ def page_exam():
     try:
         js = gas_get("get_active_exam")
         if not js.get("ok"):
+            # --------------------- START FIX/DEBUGGING ---------------------
             st.error("ยังไม่ได้กำหนดชุดข้อสอบที่ใช้อยู่ (Active Exam) หรือรูปแบบ JSON ไม่ถูกต้อง")
             st.info("ให้อาจารย์ไปตั้งค่าที่หน้า Dashboard")
             st.subheader("⚠️ Response จาก GAS (Debug)")
             st.write("โปรดตรวจสอบว่าคีย์ **'ok'** มีค่าเป็น **true** และมีคีย์ **'data'** หรือไม่")
             st.json(js)
+            # --------------------- END FIX/DEBUGGING ---------------------
             return
         exam = js["data"]
     except Exception as e:
         st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
+        # --------------------- START FIX/DEBUGGING ---------------------
         st.subheader("⚠️ Exception รายละเอียด (GAS/Network Error)")
         st.exception(e)
+        # --------------------- END FIX/DEBUGGING ---------------------
         return
 
     qn = int(exam.get("question_count", 0))
     exam_id = exam.get("exam_id", "")
-    st.info(f"ชุด: **{exam_id}** • {exam.get('title','')} • จำนวน **{qn}** ข้อ (ตัวเลือก A–E)")
+    st.info(f"ชุด: **{exam_id}** • {exam.get('title','')} • จำนวน **{qn}** ข้อ (ตัวเลือก A–E)") # เน้นตัวหนา
 
     # --------------------- ⭐️ START NEW CODE (Get Questions) ---------------------
     # 1.1) โหลด "โจทย์คำถาม"
@@ -224,7 +228,7 @@ def page_exam():
             
             if q_js.get("ok"):
                 # แปลง list of objects เป็น dict เพื่อง่ายต่อการค้นหา
-                # {1: {"text": "...", "img_url": "..."}, 2: {...}}
+                # {1: {"text": "...", "img_url": "...", "choice_a": "..."}, 2: {...}}
                 questions_list = q_js.get("data", [])
                 temp_dict = {
                     int(q.get("q_num")): q for q in questions_list if q.get("q_num")
@@ -253,9 +257,8 @@ def page_exam():
     has_window = bool(window_start and window_end)
     ok_time, msg_time = is_within_window(window_start, window_end)
     
-    ict_start = "" # 👈 ประกาศตัวแปรไว้นอก if
-    ict_end = ""   # 👈 ประกาศตัวแปรไว้นอก if
-
+    # --------------------- START UI Enhancement ---------------------
+    
     if has_window:
         # แปลงเวลา UTC เป็น ICT เพื่อแสดงผลให้ผู้ใช้
         ict_start = utc_to_ict(window_start)
@@ -278,9 +281,12 @@ def page_exam():
             else:
                 st.success("สถานะ: กำลังอยู่ในช่วงเวลาสอบ ✅")
 
+
     if has_window and not ok_time:
         # ถ้าอยู่นอกช่วงเวลาและมีการจำกัดเวลา
         return # 🔒 ปิดฟอร์มทันที: ไม่ render ฟอร์มด้านล่าง
+
+    # --------------------- END UI Enhancement ---------------------
 
     # 3) ฟอร์ม + ส่งคำตอบ
     # (ss = st.session_state ถูกเรียกไปแล้วด้านบน)
@@ -299,19 +305,19 @@ def page_exam():
     with st.form("exam_form", clear_on_submit=False):
         name = st.text_input("ชื่อผู้สอบ", placeholder="พิมพ์ชื่อ-สกุล", disabled=disabled_all)
 
-        options = ["A", "B", "C", "D", "E"]
         if len(ss["answers"]) != qn:
             ss["answers"] = [""] * qn
 
+        # --------------------- ⭐️ START MODIFIED LOOP (Dynamic Choices) ---------------------
+        
+        # ค่าตัวเลือกที่เราจะใช้เป็น "Key" (ยังคงเป็น A, B, C...)
+        radio_value_keys = ["A", "B", "C", "D", "E"]
+
         for i in range(qn):
             q_num = i + 1 # เลขข้อ (1-based)
-            
-            # --------------------- ⭐️ START MODIFIED CODE (Show Question) ---------------------
-            # 3.1) แสดงโจทย์คำถาม
-            # ใช้ st.container(border=True) เพื่อจัดกลุ่ม
-            
             question = questions_dict.get(q_num)
-            
+
+            # 3.1) แสดงโจทย์คำถาม
             with st.container(border=True): 
                 st.markdown(f"**คำถามข้อที่ {q_num}**")
                 
@@ -322,20 +328,51 @@ def page_exam():
                         st.image(question.get("img_url")) # แสดงรูป
                 else:
                     st.caption("...(ไม่มีข้อมูลโจทย์)...") # กรณีดึงโจทย์ข้อนี้ไม่สำเร็จ
-            # --------------------- ⭐️ END MODIFIED CODE (Show Question) ---------------------
 
-            # 3.2) แสดงตัวเลือก (st.radio)
+            # 3.2) สร้างตัวเลือก (st.radio) แบบไดนามิก
+            
+            # สร้าง "ตัวเลือก" ที่จะแสดงผล
+            # (เราจะใช้ format_func เพื่อสร้างข้อความที่แสดง)
+            radio_options_values = [""] + radio_value_keys # ["", "A", "B", "C", "D", "E"]
+            
+            # สร้าง Dictionary สำหรับ map ค่า (A) ไปเป็นข้อความ (Choice A Text)
+            # ถ้าไม่มีข้อมูล question ให้ใช้ค่าว่าง
+            choice_map = {
+                "A": question.get("choice_a", "") if question else "",
+                "B": question.get("choice_b", "") if question else "",
+                "C": question.get("choice_c", "") if question else "",
+                "D": question.get("choice_d", "") if question else "",
+                "E": question.get("choice_e", "") if question else "",
+            }
+            
+            # สร้างฟังก์ชันสำหรับจัดรูปแบบการแสดงผล
+            def format_radio_option(value_key):
+                if value_key == "":
+                    return " (เว้นว่าง) "
+                
+                # ดึงข้อความของตัวเลือกจาก choice_map
+                choice_text = choice_map.get(value_key)
+                
+                if choice_text:
+                    # ถ้ามีข้อความ: แสดง "A. [ข้อความตัวเลือก]"
+                    return f" {value_key}. {choice_text} "
+                else:
+                    # ถ้าไม่มีข้อความ (อาจารย์ไม่ได้กรอก): แสดง "A"
+                    return f" {value_key} "
+
             current = ss["answers"][i]
             choice = st.radio(
-                f"**คำตอบ** ข้อ {q_num}", # 👈 เปลี่ยน Label
-                options=[""] + options,
-                index=([""] + options).index(current) if current in ([""] + options) else 0,
+                f"**คำตอบ** ข้อ {q_num}",
+                options=radio_options_values,   # ค่าที่จะถูกเก็บ: ["", "A", "B", ...]
+                format_func=format_radio_option, # ฟังก์ชันที่เปลี่ยนค่าเป็นข้อความ
+                index=radio_options_values.index(current) if current in radio_options_values else 0,
                 horizontal=True,
                 disabled=disabled_all,
                 key=f"q_{i+1}_radio_form",
             )
             ss["answers"][i] = choice
             st.divider()
+        # --------------------- ⭐️ END MODIFIED LOOP ---------------------
 
         submitted_form = st.form_submit_button(
             "ส่งคำตอบ",
@@ -366,7 +403,7 @@ def page_exam():
                 else:
                     err = js2.get("error") or "ส่งคำตอบไม่สำเร็จ"
                     ss["submit_error"] = err
-                    ss["submitted"] = (err == "DUPLICATE_SUBMISSION") # 👈 อาจต้องเช็ค Error นี้จาก GAS
+                    ss["submitted"] = (err == "DUPLICATE_SUBMISSION")
             except Exception as e:
                 ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
                 ss["submitted"] = False
