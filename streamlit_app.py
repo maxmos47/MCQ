@@ -322,8 +322,14 @@ def page_exam():
                 st.markdown(f"**คำถามข้อที่ {q_num}**")
                 
                 if question:
+                    # --------------------- ⭐️ START FIX (Line Breaks) ---------------------
                     if question.get("text"):
-                        st.markdown(question.get("text")) # แสดงโจทย์
+                        # เปลี่ยน \n (new line) ธรรมดาให้เป็น Markdown hard break (two-spaces + \n)
+                        # เพื่อให้ st.markdown แสดงผลการขึ้นบรรทัดใหม่
+                        q_text = question.get("text").replace("\n", "  \n")
+                        st.markdown(q_text) # 👈 ใช้ตัวแปรที่ผ่านการ replace แล้ว
+                    # --------------------- ⭐️ END FIX (Line Breaks) ---------------------
+                        
                     if question.get("img_url"):
                         st.image(question.get("img_url")) # แสดงรูป
                 else:
@@ -355,7 +361,12 @@ def page_exam():
                 
                 if choice_text:
                     # ถ้ามีข้อความ: แสดง "A. [ข้อความตัวเลือก]"
-                    return f" {value_key}. {choice_text} "
+                    # --------------------- ⭐️ START FIX (Line Breaks in Choices) ---------------------
+                    # เรา replace \n ด้วย " " (เว้นวรรค) ในตัวเลือก
+                    # เพราะ st.radio "ไม่รองรับ" การขึ้นบรรทัดใหม่ใน Label
+                    choice_text_single_line = choice_text.replace("\n", " ")
+                    return f" {value_key}. {choice_text_single_line} "
+                    # --------------------- ⭐️ END FIX (Line Breaks in Choices) ---------------------
                 else:
                     # ถ้าไม่มีข้อความ (อาจารย์ไม่ได้กรอก): แสดง "A"
                     return f" {value_key} "
