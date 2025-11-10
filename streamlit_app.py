@@ -192,26 +192,58 @@ def page_exam():
     try:
         js = gas_get("get_active_exam")
         if not js.get("ok"):
-            # --------------------- START FIX/DEBUGGING ---------------------
             st.error("ยังไม่ได้กำหนดชุดข้อสอบที่ใช้อยู่ (Active Exam) หรือรูปแบบ JSON ไม่ถูกต้อง")
             st.info("ให้อาจารย์ไปตั้งค่าที่หน้า Dashboard")
             st.subheader("⚠️ Response จาก GAS (Debug)")
             st.write("โปรดตรวจสอบว่าคีย์ **'ok'** มีค่าเป็น **true** และมีคีย์ **'data'** หรือไม่")
             st.json(js)
-            # --------------------- END FIX/DEBUGGING ---------------------
             return
         exam = js["data"]
     except Exception as e:
         st.error(f"โหลดชุดข้อสอบล้มเหลว: {e}")
-        # --------------------- START FIX/DEBUGGING ---------------------
         st.subheader("⚠️ Exception รายละเอียด (GAS/Network Error)")
         st.exception(e)
-        # --------------------- END FIX/DEBUGGING ---------------------
         return
 
     qn = int(exam.get("question_count", 0))
     exam_id = exam.get("exam_id", "")
-    st.info(f"ชุด: **{exam_id}** • {exam.get('title','')} • จำนวน **{qn}** ข้อ (ตัวเลือก A–E)") # เน้นตัวหนา
+    st.info(f"ชุด: **{exam_id}** • {exam.get('title','')} • จำนวน **{qn}** ข้อ (ตัวเลือก A–E)")
+
+    # --------------------- ⭐️ START NEW CODE (Get Questions) ---------------------
+    # 1.1) โหลด "โจทย์คำถาม"
+    ss = st.session_state
+    if "questions_data" not in ss:
+        ss.questions_data = {} # ใช้ dict เพื่อให้เรียกง่าย
+
+    # ตรวจสอบว่าโหลดคำถามของชุดนี้มาหรือยัง
+    if ss.questions_data.get("exam_id") != exam_id:
+        try:
+            # ใช้ st.spinner เพื่อความสวยงาม
+            with st.spinner(f"กำลังโหลดโจทย์คำถาม ชุด {exam_id}..."):
+                q_js = gas_get("get_questions", {"exam_id": exam_id})
+            
+            if q_js.get("ok"):
+                # แปลง list of objects เป็น dict เพื่อง่ายต่อการค้นหา
+                # {1: {"text": "...", "img_url": "..."}, 2: {...}}
+                questions_list = q_js.get("data", [])
+                temp_dict = {
+                    int(q.get("q_num")): q for q in questions_list if q.get("q_num")
+                }
+                ss.questions_data = {
+                    "exam_id": exam_id,
+                    "questions": temp_dict
+                }
+            else:
+                st.warning(f"ไม่สามารถโหลดโจทย์คำถามได้: {q_js.get('error', 'Unknown error')}")
+                ss.questions_data = {"exam_id": exam_id, "questions": {}} # โหลดไม่สำเร็จ
+        except Exception as e:
+            st.warning(f"ไม่สามารถโหลดโจทย์คำถามได้ (อาจยังไม่มีในชีท): {e}")
+            ss.questions_data = {"exam_id": exam_id, "questions": {}}
+    
+    # เตรียม questions_dict ไว้ใช้งาน
+    questions_dict = ss.questions_data.get("questions", {})
+    # --------------------- ⭐️ END NEW CODE (Get Questions) ---------------------
+
 
     # 2) ตรวจช่วงเวลา (บังคับปิดฟอร์มถ้าอยู่นอกช่วง)
     time_mode_raw = (exam.get("time_mode", "") or "").strip().lower()
@@ -221,8 +253,9 @@ def page_exam():
     has_window = bool(window_start and window_end)
     ok_time, msg_time = is_within_window(window_start, window_end)
     
-    # --------------------- START UI Enhancement ---------------------
-    
+    ict_start = "" # 👈 ประกาศตัวแปรไว้นอก if
+    ict_end = ""   # 👈 ประกาศตัวแปรไว้นอก if
+
     if has_window:
         # แปลงเวลา UTC เป็น ICT เพื่อแสดงผลให้ผู้ใช้
         ict_start = utc_to_ict(window_start)
@@ -245,17 +278,12 @@ def page_exam():
             else:
                 st.success("สถานะ: กำลังอยู่ในช่วงเวลาสอบ ✅")
 
-
     if has_window and not ok_time:
         # ถ้าอยู่นอกช่วงเวลาและมีการจำกัดเวลา
-        # st.error(f"⏰ {msg_time}") # แสดงไปแล้วใน Container
-        # st.info(f"ช่วงเวลาสอบ (ไทย): **{ict_start}** → **{ict_end}**") # แสดงไปแล้วใน Container
         return # 🔒 ปิดฟอร์มทันที: ไม่ render ฟอร์มด้านล่าง
 
-    # --------------------- END UI Enhancement ---------------------
-
-    # 3) เหมือน baseline เดิมต่อไป (ฟอร์ม + ส่งคำตอบ)
-    ss = st.session_state
+    # 3) ฟอร์ม + ส่งคำตอบ
+    # (ss = st.session_state ถูกเรียกไปแล้วด้านบน)
     ss.setdefault("submitted", False)
     ss.setdefault("pending_submit_payload", None)
     ss.setdefault("submit_result", None)
@@ -276,9 +304,30 @@ def page_exam():
             ss["answers"] = [""] * qn
 
         for i in range(qn):
+            q_num = i + 1 # เลขข้อ (1-based)
+            
+            # --------------------- ⭐️ START MODIFIED CODE (Show Question) ---------------------
+            # 3.1) แสดงโจทย์คำถาม
+            # ใช้ st.container(border=True) เพื่อจัดกลุ่ม
+            
+            question = questions_dict.get(q_num)
+            
+            with st.container(border=True): 
+                st.markdown(f"**คำถามข้อที่ {q_num}**")
+                
+                if question:
+                    if question.get("text"):
+                        st.markdown(question.get("text")) # แสดงโจทย์
+                    if question.get("img_url"):
+                        st.image(question.get("img_url")) # แสดงรูป
+                else:
+                    st.caption("...(ไม่มีข้อมูลโจทย์)...") # กรณีดึงโจทย์ข้อนี้ไม่สำเร็จ
+            # --------------------- ⭐️ END MODIFIED CODE (Show Question) ---------------------
+
+            # 3.2) แสดงตัวเลือก (st.radio)
             current = ss["answers"][i]
             choice = st.radio(
-                f"ข้อ {i+1}",
+                f"**คำตอบ** ข้อ {q_num}", # 👈 เปลี่ยน Label
                 options=[""] + options,
                 index=([""] + options).index(current) if current in ([""] + options) else 0,
                 horizontal=True,
@@ -317,7 +366,7 @@ def page_exam():
                 else:
                     err = js2.get("error") or "ส่งคำตอบไม่สำเร็จ"
                     ss["submit_error"] = err
-                    ss["submitted"] = (err == "DUPLICATE_SUBMISSION")
+                    ss["submitted"] = (err == "DUPLICATE_SUBMISSION") # 👈 อาจต้องเช็ค Error นี้จาก GAS
             except Exception as e:
                 ss["submit_error"] = f"ส่งคำตอบล้มเหลว: {e}"
                 ss["submitted"] = False
